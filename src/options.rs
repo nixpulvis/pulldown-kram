@@ -11,7 +11,9 @@ use bitflags::bitflags;
 /// is given in the end: the options in `cmark`, and those the extensions
 /// need.
 ///
-/// pulldown-cmark's options and [`Extensions`] each convert into these.
+/// [`Options::all`] reads everything, kramdown or not. [`Options::empty`]
+/// reads plain CommonMark. pulldown-cmark's options and [`Extensions`] each
+/// convert into these too.
 /// From pulldown-cmark's options, those that read an extension become that
 /// extension, and the extensions read here are all on.
 ///
@@ -37,6 +39,24 @@ pub struct Options {
 }
 
 impl Options {
+    /// Plain CommonMark: no extensions, and none of pulldown-cmark's
+    /// options.
+    pub fn empty() -> Self {
+        Extensions::empty().into()
+    }
+
+    /// Every extension, and every pulldown-cmark option that adds to them,
+    /// like math and definition lists. `ENABLE_OLD_FOOTNOTES` is left off,
+    /// as it changes the footnotes kramdown reads rather than adding to
+    /// them.
+    pub fn all() -> Self {
+        use pulldown_cmark::Options as Cmark;
+        // The old footnotes flag includes the new one, so take out only its
+        // own bit.
+        let cmark = Cmark::all() - (Cmark::ENABLE_OLD_FOOTNOTES - Cmark::ENABLE_FOOTNOTES);
+        cmark.into()
+    }
+
     /// The options pulldown-cmark reads with: those in `cmark` and those the
     /// extensions need, less `ENABLE_HEADING_ATTRIBUTES`, which reads `{…}`
     /// after a heading differently from kramdown.

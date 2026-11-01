@@ -268,6 +268,36 @@ fn tables_of_contents() {
 }
 
 #[test]
+fn all_or_nothing() {
+    use pulldown_kram::Options;
+    use pulldown_kram::pulldown_cmark::{Options as Cmark, Parser};
+
+    let all = Options::all();
+    assert_eq!(all.kramdown, Extensions::all());
+    assert!(
+        all.parser_options()
+            .contains(Cmark::ENABLE_MATH | Cmark::ENABLE_FOOTNOTES)
+    );
+    assert!(!all.parser_options().contains(Cmark::ENABLE_OLD_FOOTNOTES));
+    assert!(
+        !all.parser_options()
+            .contains(Cmark::ENABLE_HEADING_ATTRIBUTES)
+    );
+
+    // With nothing, it's pulldown-cmark's CommonMark.
+    let markdown = "# A {#b}\n\n*c*{:.d} | e\n-|-\n";
+    let document = Document::new(markdown, Options::empty());
+    let events: Vec<_> = document
+        .events()
+        .map(|(event, attributes)| {
+            assert!(attributes.is_empty());
+            event
+        })
+        .collect();
+    assert!(events.into_iter().eq(Parser::new(markdown)));
+}
+
+#[test]
 fn each_extension_can_be_left_off() {
     let without = |extension| Extensions::all() - extension;
     assert_eq!(
