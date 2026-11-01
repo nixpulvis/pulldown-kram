@@ -121,11 +121,16 @@ impl<'a> Toc<'a> {
 }
 
 impl<'a> Entry<'a> {
-    /// The headings in `items` without the class `no_toc`.
+    /// The headings in `items` with an id and without the class `no_toc`.
     fn all(items: &[Item<'a>]) -> Vec<Self> {
         let mut entries = Vec::new();
         for (i, item) in items.iter().enumerate() {
-            let Event::Start(Tag::Heading { level, id, .. }) = &item.event else {
+            let Event::Start(Tag::Heading {
+                level,
+                id: Some(id),
+                ..
+            }) = &item.event
+            else {
                 continue;
             };
             if item.lists.attributes.has_class("no_toc") {
@@ -145,7 +150,7 @@ impl<'a> Entry<'a> {
                 .collect();
             entries.push(Self {
                 level: *level as usize,
-                id: id.clone().expect("every heading to have an id"),
+                id: id.clone(),
                 content,
             });
         }

@@ -41,7 +41,8 @@
 //! checked item reads as kramdown means it. An unchecked one doesn't, and
 //! says what happens instead. Much of what's checked is CommonMark, where
 //! the two agree, so it depends on the [`Options`] given: tables, footnotes,
-//! math and typography need their `ENABLE_` options.
+//! math and typography need pulldown-cmark's `ENABLE_` options. Each of
+//! kramdown's own additions can be left off with [`Extensions`].
 //!
 //! [kramdown's syntax]: https://kramdown.gettalong.org/syntax.html
 //!
@@ -144,25 +145,25 @@
 //!
 //! - [x] Header ids, made the way kramdown's GFM parser, Jekyll's default,
 //!   makes them, from the heading's text without its markup.
-//! - [x] `{:toc}` tables of contents, with the `toc` feature, nested by
-//!   level, leaving out headings with the class `no_toc`, and links inside
-//!   headings. Without it, the list is left as it's written.
+//! - [x] `{:toc}` tables of contents, nested by level, leaving out headings
+//!   with the class `no_toc`, and links inside headings.
 
 #![warn(missing_docs)]
 
 mod attributes;
 mod headings;
+mod options;
 mod read;
 mod source;
-#[cfg(feature = "toc")]
 mod toc;
 
 use std::borrow::Cow;
 use std::fmt;
 
 pub use attributes::Attributes;
+pub use options::{Extensions, Options};
 pub use pulldown_cmark;
-use pulldown_cmark::{Event, Options};
+use pulldown_cmark::Event;
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -172,12 +173,12 @@ pub struct Document<'a> {
 }
 
 impl<'a> Document<'a> {
-    /// Reads `markdown` with pulldown-cmark's `options`, less
-    /// `ENABLE_HEADING_ATTRIBUTES`, which reads `{…}` after a heading
-    /// differently from kramdown. kramdown's own `{#id}` is read instead.
-    pub fn new(markdown: &'a str, options: Options) -> Self {
+    /// Reads `markdown` with `options`, which may be just pulldown-cmark's,
+    /// for every kramdown extension.
+    pub fn new(markdown: &'a str, options: impl Into<Options>) -> Self {
+        let options = options.into();
         Self {
-            text: source::prepare(markdown),
+            text: source::prepare(markdown, options.kramdown),
             options,
         }
     }
@@ -185,36 +186,50 @@ impl<'a> Document<'a> {
     /// The document's events, each with the attributes kramdown gives it.
     ///
     /// They're read as they're asked for, a block at a time, as attribute
-    /// lists after a block are for it. With the `toc` feature, they're all
-    /// read first, for tables of contents to link to the headings after
-    /// them.
+    /// lists after a block are for it. With tables of contents, they're all
+    /// read first, for the tables to link to the headings after them.
     pub fn events(&self) -> Events<'_> {
-        let items = read::Reader::new(&self.text, self.options);
-        #[cfg(feature = "toc")]
-        let items = toc::Toc::replace_lists(items.collect()).into_iter();
+        let reader = read::Reader::new(&self.text, self.options);
+        let items = if self
+            .options
+            .kramdown
+            .contains(Extensions::ENABLE_TABLES_OF_CONTENTS)
+        {
+            Items::Read(toc::Toc::replace_lists(reader.collect()).into_iter())
+        } else {
+            Items::Streamed(reader)
+        };
         Events(items)
     }
 }
 
-#[cfg(not(feature = "toc"))]
-type Items<'a> = read::Reader<'a>;
-#[cfg(feature = "toc")]
-type Items<'a> = std::vec::IntoIter<read::Item<'a>>;
-
 /// The events of a [`Document`], each with its attributes.
 pub struct Events<'a>(Items<'a>);
+
+/// Where the events come from.
+enum Items<'a> {
+    /// Read as they're asked for.
+    Streamed(read::Reader<'a>),
+    /// Read all at once.
+    Read(std::vec::IntoIter<read::Item<'a>>),
+}
 
 impl<'a> Iterator for Events<'a> {
     type Item = (Event<'a>, Attributes<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|item| (item.event, item.lists.attributes))
+        let item = match &mut self.0 {
+            Items::Streamed(reader) => reader.next(),
+            Items::Read(items) => items.next(),
+        };
+        item.map(|item| (item.event, item.lists.attributes))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        match &self.0 {
+            Items::Streamed(reader) => reader.size_hint(),
+            Items::Read(items) => items.size_hint(),
+        }
     }
 }
 

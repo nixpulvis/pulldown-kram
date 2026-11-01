@@ -9,15 +9,6 @@ repository = "https://github.com/nixpulvis/pulldown-kram"
 keywords = ["markdown", "kramdown", "jekyll", "pulldown-cmark"]
 categories = ["text-processing", "parser-implementations"]
 
-[package.metadata.docs.rs]
-all-features = true
-
-[features]
-default = []
-# Make lists marked `{:toc}` into tables of contents. The whole document is
-# read before any event is given out, for them to link to headings after
-# them.
-toc = []
-
 [dependencies]
+bitflags = "2"
 pulldown-cmark = { version = "0.13", default-features = false }

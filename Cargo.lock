@@ -29,6 +29,7 @@ dependencies = [
 name = "pulldown-kram"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "pulldown-cmark",
 ]
 

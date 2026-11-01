@@ -3,11 +3,20 @@
 
 use std::borrow::Cow;
 
-/// Markdown inside `markdown="1"` elements gets the blank lines CommonMark
-/// needs to read it as Markdown, and a line of only a span tag, like
-/// `<img>`, starts a paragraph rather than an HTML block.
-pub(crate) fn prepare(markdown: &str) -> Cow<'_, str> {
-    let markdown = MarkdownElements::separate(markdown);
+use crate::Extensions;
+
+/// With `extensions`, Markdown inside `markdown="1"` elements gets the blank
+/// lines CommonMark needs to read it as Markdown, and a line of only a span
+/// tag, like `<img>`, starts a paragraph rather than an HTML block.
+pub(crate) fn prepare(markdown: &str, extensions: Extensions) -> Cow<'_, str> {
+    let markdown = if extensions.contains(Extensions::ENABLE_MARKDOWN_ATTRIBUTE) {
+        MarkdownElements::separate(markdown)
+    } else {
+        Cow::Borrowed(markdown)
+    };
+    if !extensions.contains(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS) {
+        return markdown;
+    }
     match SpanTags::join(&markdown) {
         Cow::Owned(out) => Cow::Owned(out),
         Cow::Borrowed(_) => markdown,
@@ -237,20 +246,20 @@ mod tests {
     fn separates_markdown_from_tags() {
         let src = "<div markdown=\"1\">\n```rust\n</div>\n```\n<div>\n</div>\n</div>\nafter\n";
         assert_eq!(
-            prepare(src),
+            prepare(src, Extensions::all()),
             "<div markdown=\"1\">\n\n```rust\n</div>\n```\n<div>\n</div>\n\n</div>\nafter\n"
         );
         // Elements closed on their own line, or only alike in their start,
         // don't nest.
         let src = "<p markdown=\"1\">\n<p>x</p>\n<pre>\n</pre>\n</p>\n";
         assert_eq!(
-            prepare(src),
+            prepare(src, Extensions::all()),
             "<p markdown=\"1\">\n\n<p>x</p>\n<pre>\n</pre>\n\n</p>\n"
         );
         // A fence only closes with as many marks.
         let src = "<div markdown=\"1\">\n````\n```\n</div>\n````\n</div>\n";
         assert_eq!(
-            prepare(src),
+            prepare(src, Extensions::all()),
             "<div markdown=\"1\">\n\n````\n```\n</div>\n````\n\n</div>\n"
         );
     }
@@ -258,15 +267,18 @@ mod tests {
     #[test]
     fn span_tags_start_paragraphs() {
         assert_eq!(
-            prepare("<img src=\"a\" />\n![b](c)\n"),
+            prepare("<img src=\"a\" />\n![b](c)\n", Extensions::all()),
             "<img src=\"a\" /> ![b](c)\n"
         );
         assert_eq!(
-            prepare("<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n"),
+            prepare(
+                "<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n",
+                Extensions::all()
+            ),
             "<span class=\"g\"> ![a](b)\n![c](d)\n</span>\n"
         );
         // Not block elements, tags before a blank line or a fence, or code.
         let src = "<div>\n*a*\n</div>\n\n<img />\n\n<b>\n```\n<b>\nx\n```\n    <b>\n    x\n";
-        assert!(matches!(prepare(src), Cow::Borrowed(_)));
+        assert!(matches!(prepare(src, Extensions::all()), Cow::Borrowed(_)));
     }
 }

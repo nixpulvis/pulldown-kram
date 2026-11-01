@@ -5,10 +5,11 @@ use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, CowStr, Event, OffsetIter, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, OffsetIter, Parser, Tag, TagEnd};
 
 use crate::attributes::Lists;
 use crate::headings::HeaderIds;
+use crate::{Extensions, Options};
 
 /// An event, where in the source it was read, and what kramdown's
 /// attribute lists give it.
@@ -72,6 +73,7 @@ impl<'a> Item<'a> {
 /// it known that no attribute list after it is for it.
 pub(crate) struct Reader<'a> {
     text: &'a str,
+    kramdown: Extensions,
     events: Peekable<OffsetIter<'a>>,
     /// Where each line after the first starts.
     lines: Vec<usize>,
@@ -121,14 +123,28 @@ enum Target {
     Line { lazy: bool },
 }
 
+impl Target {
+    /// The extension that reads lists here.
+    fn extension(&self) -> Extensions {
+        match self {
+            Target::Span(_) => Extensions::ENABLE_SPAN_ATTRIBUTES,
+            Target::Item(_) => Extensions::ENABLE_ITEM_ATTRIBUTES,
+            Target::Line { .. } => Extensions::ENABLE_BLOCK_ATTRIBUTES,
+        }
+    }
+}
+
 impl<'a> Reader<'a> {
     /// Reads `text` with `options`, less heading attributes, which read `{…}`
     /// after a heading differently from kramdown.
     pub fn new(text: &'a str, options: Options) -> Self {
-        let options = options - Options::ENABLE_HEADING_ATTRIBUTES;
+        let markdown = options.markdown - pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES;
         Self {
             text,
-            events: Parser::new_ext(text, options).into_offset_iter().peekable(),
+            kramdown: options.kramdown,
+            events: Parser::new_ext(text, markdown)
+                .into_offset_iter()
+                .peekable(),
             lines: text.match_indices('\n').map(|(i, _)| i + 1).collect(),
             pending: Vec::new(),
             base: 0,
@@ -172,7 +188,7 @@ impl<'a> Reader<'a> {
                 self.next = None;
                 self.push(event, range);
             }
-            Event::Text(_) if !self.in_code_block() => {
+            Event::Text(_) if self.kramdown.attribute_lists() && !self.in_code_block() => {
                 match Lists::parse(&self.text[range.start..]) {
                     Some((lists, len)) => self.lists(lists, len, event, range),
                     None => {
@@ -223,9 +239,11 @@ impl<'a> Reader<'a> {
     /// What the lists between `start` and `end` are for, if anything.
     fn target(&self, start: usize, end: usize) -> Option<Target> {
         let last = self.last_index()?;
-        self.span_before(last, start)
+        let target = self
+            .span_before(last, start)
             .or_else(|| self.alone_on_line(start, end))
-            .or_else(|| self.item_starting(last))
+            .or_else(|| self.item_starting(last))?;
+        self.kramdown.contains(target.extension()).then_some(target)
     }
 
     /// The span the lists at `start` come right after, if `last` ends one
@@ -422,9 +440,11 @@ impl<'a> Reader<'a> {
             .drain(..end - self.base)
             .map(|pending| pending.item)
             .collect();
-        self.ids.assign(&mut items, self.text);
-        for item in &mut items {
-            item.take_language_from_classes();
+        self.ids.assign(&mut items, self.text, self.kramdown);
+        if self.kramdown.contains(Extensions::ENABLE_LANGUAGE_CLASSES) {
+            for item in &mut items {
+                item.take_language_from_classes();
+            }
         }
         // Taking `{#id}` off a heading can leave its text empty.
         self.ready.extend(

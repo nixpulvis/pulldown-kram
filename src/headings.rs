@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use pulldown_cmark::{CowStr, Event, Tag};
 
+use crate::Extensions;
 use crate::read::Item;
 
 /// Hands out ids the way kramdown's GFM parser does: the text in lowercase,
@@ -16,9 +17,10 @@ pub(crate) struct HeaderIds {
 }
 
 impl HeaderIds {
-    /// Gives every heading in `items` an id: its own, from `{#id}` after its
-    /// text or an attribute list, or else one made from its text.
-    pub fn assign<'a>(&mut self, items: &mut [Item<'a>], text: &'a str) {
+    /// Gives every heading in `items` an id, as far as `extensions` allow:
+    /// its own, from `{#id}` after its text or an attribute list, or else
+    /// one made from its text.
+    pub fn assign<'a>(&mut self, items: &mut [Item<'a>], text: &'a str, extensions: Extensions) {
         let mut i = 0;
         while i < items.len() {
             if !matches!(items[i].event, Event::Start(Tag::Heading { .. })) {
@@ -27,12 +29,19 @@ impl HeaderIds {
             }
             let end = Item::end_of(items, i);
             let heading = items[i].range.start;
-            let explicit = explicit_id(&mut items[i + 1..end], text, heading);
+            let explicit = extensions
+                .contains(Extensions::ENABLE_HEADER_IDS)
+                .then(|| explicit_id(&mut items[i + 1..end], text, heading))
+                .flatten();
             // An attribute list's id wins over `{#id}`, coming after it.
             let id = items[i].lists.attributes.id.clone().or(explicit);
-            let id = id.unwrap_or_else(|| CowStr::from(self.unique(&raw_text(&items[i + 1..end]))));
+            let id = id.or_else(|| {
+                extensions
+                    .contains(Extensions::ENABLE_AUTO_IDS)
+                    .then(|| CowStr::from(self.unique(&raw_text(&items[i + 1..end]))))
+            });
             if let Event::Start(Tag::Heading { id: slot, .. }) = &mut items[i].event {
-                *slot = Some(id);
+                *slot = id;
             }
             i = end + 1;
         }

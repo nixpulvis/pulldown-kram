@@ -2,12 +2,21 @@
 //! default. Each expected outline is kramdown's HTML for the same input,
 //! cut down to the elements and attributes the events carry.
 
-use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Options, Tag, TagEnd};
-use pulldown_kram::{Attributes, Document};
+use pulldown_kram::pulldown_cmark::{self, CodeBlockKind, Event, Tag, TagEnd};
+use pulldown_kram::{Attributes, Document, Extensions, Options};
 
 /// The document's events as HTML-like text, attributes included.
 fn outline(markdown: &str) -> String {
-    let options = Options::ENABLE_SMART_PUNCTUATION | Options::ENABLE_FOOTNOTES;
+    outline_with(markdown, Extensions::all())
+}
+
+/// [`outline`], reading only `extensions`.
+fn outline_with(markdown: &str, extensions: Extensions) -> String {
+    let options = Options {
+        markdown: pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION
+            | pulldown_cmark::Options::ENABLE_FOOTNOTES,
+        kramdown: extensions,
+    };
     let document = Document::new(markdown, options);
     let mut out = String::new();
     for (event, attributes) in document.events() {
@@ -31,6 +40,7 @@ fn outline(markdown: &str) -> String {
                     Tag::Strong => ("strong", String::new()),
                     Tag::Link { dest_url, .. } => ("a", format!(" href=\"{dest_url}\"")),
                     Tag::FootnoteDefinition(label) => ("footnote", format!(" label=\"{label}\"")),
+                    Tag::HtmlBlock => ("html", String::new()),
                     tag => panic!("unexpected {tag:?}"),
                 };
                 out.push_str(&format!("<{name}{extra}{}>", attrs(&attributes)));
@@ -49,12 +59,14 @@ fn outline(markdown: &str) -> String {
                 TagEnd::Strong => "</strong>",
                 TagEnd::FootnoteDefinition => "</footnote>",
                 TagEnd::Link => "</a>",
+                TagEnd::HtmlBlock => "</html>",
                 tag => panic!("unexpected {tag:?}"),
             }),
             Event::Text(text) => out.push_str(&text),
             Event::Code(code) => {
                 out.push_str(&format!("<code{}>{code}</code>", attrs(&attributes)))
             }
+            Event::Html(html) | Event::InlineHtml(html) => out.push_str(&html),
             Event::SoftBreak => out.push('\n'),
             Event::Rule => out.push_str(&format!("<hr{}>", attrs(&attributes))),
             Event::FootnoteReference(label) => out.push_str(&format!("[^{label}]")),
@@ -192,7 +204,6 @@ fn header_ids() {
     );
 }
 
-#[cfg(feature = "toc")]
 #[test]
 fn tables_of_contents() {
     let markdown = "* TOC\n{:toc}\n\n## See [docs](http://x.com) *now* [^1]\n\n## Two\n{:.no_toc}\n\n# Hello #    {#custom}\n\n### Deep\n\n[^1]: note\n";
@@ -227,11 +238,58 @@ fn tables_of_contents() {
     );
 }
 
-#[cfg(not(feature = "toc"))]
 #[test]
-fn tables_of_contents_need_the_feature() {
+fn each_extension_can_be_left_off() {
+    let without = |extension| Extensions::all() - extension;
     assert_eq!(
-        outline("* TOC\n{:toc}\n\n# A\n"),
+        outline_with(
+            "para\n{:.x}\n",
+            without(Extensions::ENABLE_BLOCK_ATTRIBUTES)
+        ),
+        "<p>para\n{:.x}</p>"
+    );
+    assert_eq!(
+        outline_with("*a*{:.x}\n", without(Extensions::ENABLE_SPAN_ATTRIBUTES)),
+        "<p><em>a</em>{:.x}</p>"
+    );
+    assert_eq!(
+        outline_with("* {:.x} a\n", without(Extensions::ENABLE_ITEM_ATTRIBUTES)),
+        "<ul><li>{:.x} a</li></ul>"
+    );
+    assert_eq!(
+        outline_with("# A {#b}\n", without(Extensions::ENABLE_HEADER_IDS)),
+        "<h1 id=\"a-b\">A {#b}</h1>"
+    );
+    assert_eq!(
+        outline_with("# A\n", without(Extensions::ENABLE_AUTO_IDS)),
+        "<h1 id=\"\">A</h1>"
+    );
+    assert_eq!(
+        outline_with(
+            "<div markdown=\"1\">\n*a*\n</div>\n",
+            without(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
+        ),
+        "<html><div markdown=\"1\">\n*a*\n</div>\n</html>"
+    );
+    assert_eq!(
+        outline_with(
+            "<b>\n*a*\n",
+            without(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
+        ),
+        "<html><b>\n*a*\n</html>"
+    );
+    assert_eq!(
+        outline_with(
+            "~~~\nx\n~~~\n{: .language-ruby}\n",
+            without(Extensions::ENABLE_LANGUAGE_CLASSES)
+        ),
+        "<pre class=\"language-ruby\">x\n</pre>"
+    );
+    assert_eq!(
+        outline_with(
+            "* TOC\n{:toc}\n\n# A\n",
+            without(Extensions::ENABLE_TABLES_OF_CONTENTS)
+        ),
         "<ul><li>TOC</li></ul><h1 id=\"a\">A</h1>"
     );
 }
