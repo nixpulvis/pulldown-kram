@@ -8,18 +8,16 @@ use std::ops::Range;
 
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, OffsetIter, Options, Parser, Tag, TagEnd};
 
-use crate::attributes::{Attributes, Lists};
-use crate::headings::{self, HeaderIds};
+use crate::attributes::Lists;
+use crate::headings::HeaderIds;
 
-/// An event, where in the source it was read, and what kramdown adds to it.
+/// An event, where in the source it was read, and what kramdown's
+/// attribute lists give it.
 #[derive(Debug, Clone)]
 pub(crate) struct Item<'a> {
     pub event: Event<'a>,
     pub range: Range<usize>,
-    pub attributes: Attributes<'a>,
-    /// Whether `{:toc}` asks for this list to become a table of contents.
-    #[cfg_attr(not(feature = "toc"), allow(dead_code))]
-    pub toc: bool,
+    pub lists: Lists<'a>,
 }
 
 impl<'a> Item<'a> {
@@ -27,9 +25,46 @@ impl<'a> Item<'a> {
         Self {
             event,
             range,
-            attributes: Attributes::default(),
-            toc: false,
+            lists: Lists::default(),
         }
+    }
+
+    /// Gives a code block without a language the one in a `language-` class.
+    fn take_language_from_classes(&mut self) {
+        let Event::Start(Tag::CodeBlock(kind)) = &mut self.event else {
+            return;
+        };
+        if matches!(kind, CodeBlockKind::Fenced(info) if !info.trim().is_empty()) {
+            return;
+        }
+        let language = self.lists.attributes.classes.iter().find_map(|class| {
+            let language = class.strip_prefix("language-")?;
+            Some(match class {
+                Cow::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
+                Cow::Owned(_) => CowStr::from(language.to_owned()),
+            })
+        });
+        if let Some(language) = language {
+            *kind = CodeBlockKind::Fenced(language);
+        }
+    }
+
+    /// The index of the end of the element starting at `start` in `items`.
+    pub fn end_of(items: &[Self], start: usize) -> usize {
+        let mut depth = 0usize;
+        for (i, item) in items.iter().enumerate().skip(start) {
+            match item.event {
+                Event::Start(_) => depth += 1,
+                Event::End(_) => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return i;
+                    }
+                }
+                _ => {}
+            }
+        }
+        items.len() - 1
     }
 }
 
@@ -43,24 +78,37 @@ pub(crate) struct Reader<'a> {
     lines: Vec<usize>,
     /// The items read but not yet given out. Indices into them count every
     /// item read, starting from the first, which was `base`.
-    out: Vec<Item<'a>>,
+    pending: Vec<Pending<'a>>,
     base: usize,
-    /// For each item in `out` that's an end, the index of its start.
-    starts: Vec<usize>,
     /// The indices of the elements open, innermost last.
     open: Vec<usize>,
     /// The indices of the last top-level block read, and the one before it,
     /// which an attribute list may still be for.
     block: Option<usize>,
     previous_block: Option<usize>,
-    /// What a list alone between blocks gives the next block.
-    next: Option<(Attributes<'a>, bool)>,
-    /// A paragraph that lists on lines of their own have ended, and where,
-    /// for the lines after them to start a new one.
-    split: Option<(usize, usize)>,
+    /// What lists alone between blocks give the next block.
+    next: Option<Lists<'a>>,
+    split: Option<Split>,
     ids: HeaderIds,
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
+}
+
+/// An item read, but not given out until no more lists can be for it.
+struct Pending<'a> {
+    item: Item<'a>,
+    /// For an end, the index of its start.
+    start: Option<usize>,
+}
+
+/// A paragraph that lists on lines of their own have ended, for the lines
+/// after them to start a new one.
+#[derive(Clone, Copy)]
+struct Split {
+    /// The index of the paragraph's start.
+    paragraph: usize,
+    /// Where in the source the paragraph ends, at the lists.
+    end: usize,
 }
 
 /// What an attribute list is for, by where it is.
@@ -83,9 +131,8 @@ impl<'a> Reader<'a> {
             text,
             events: Parser::new_ext(text, options).into_offset_iter().peekable(),
             lines: text.match_indices('\n').map(|(i, _)| i + 1).collect(),
-            out: Vec::new(),
+            pending: Vec::new(),
             base: 0,
-            starts: Vec::new(),
             open: Vec::new(),
             block: None,
             previous_block: None,
@@ -104,13 +151,9 @@ impl<'a> Reader<'a> {
                     self.settle(block);
                 }
                 let next = self.next.take();
-                let start = matches!(event, Event::Start(_));
                 let i = self.push(event, range);
-                if let Some((attributes, toc)) = next {
-                    self.attach(i, attributes, toc);
-                }
-                if start {
-                    self.open.push(i);
+                if let Some(lists) = next {
+                    self.attach(i, lists);
                 }
                 if top {
                     self.previous_block = self.block;
@@ -120,7 +163,7 @@ impl<'a> Reader<'a> {
             Event::End(TagEnd::Paragraph) if self.is_empty_paragraph() => {
                 self.next = None;
                 self.open.pop();
-                let paragraph = self.pop();
+                let paragraph = self.pending.pop().expect("the paragraph").item;
                 if self.open.is_empty() {
                     self.block = self.previous_block;
                 }
@@ -128,13 +171,11 @@ impl<'a> Reader<'a> {
             }
             Event::End(_) => {
                 self.next = None;
-                let start = self.open.pop().unwrap_or_default();
-                let i = self.push(event, range);
-                *self.start_of_mut(i) = start;
+                self.push(event, range);
             }
             Event::Text(_) if !self.in_code_block() => {
                 match Lists::parse(&self.text[range.start..]) {
-                    Some(lists) => self.lists(lists, event, range),
+                    Some((lists, len)) => self.lists(lists, len, event, range),
                     None => {
                         self.push(event, range);
                     }
@@ -146,22 +187,19 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Gives `lists`, which start `event`'s text, to what they're for, or
-    /// leaves them as text if they're for nothing.
-    fn lists(&mut self, lists: Lists<'a>, event: Event<'a>, range: Range<usize>) {
+    /// Gives `lists`, `len` bytes at the start of `event`'s text, to what
+    /// they're for, or leaves them as text if they're for nothing.
+    fn lists(&mut self, lists: Lists<'a>, len: usize, event: Event<'a>, range: Range<usize>) {
         let start = range.start;
-        let end = start + lists.len;
+        let end = start + len;
         let Some(target) = self.target(start, end) else {
             self.push(event, range);
             return;
         };
         let rest = self.consume(range, end);
-        let Lists {
-            attributes, toc, ..
-        } = lists;
         match target {
             Target::Span(i) => {
-                self.attach(i, attributes, toc);
+                self.attach(i, lists);
                 if let Some(rest) = rest {
                     self.push(
                         Event::Text(CowStr::Borrowed(&self.text[rest.clone()])),
@@ -170,7 +208,7 @@ impl<'a> Reader<'a> {
                 }
             }
             Target::Item(i) => {
-                self.attach(i, attributes, toc);
+                self.attach(i, lists);
                 if let Some(rest) = rest {
                     let text = self.text[rest.clone()].trim_start();
                     if !text.is_empty() {
@@ -179,41 +217,58 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            Target::Line { lazy } => self.line(attributes, toc, lazy, start..end),
+            Target::Line { lazy } => self.line(lists, lazy, start),
         }
     }
 
     /// What the lists between `start` and `end` are for, if anything.
     fn target(&self, start: usize, end: usize) -> Option<Target> {
         let last = self.last_index()?;
-        let prev = self.item(last);
-        if prev.range.end == start {
-            match prev.event {
-                Event::Code(_) => return Some(Target::Span(last)),
-                Event::End(
-                    TagEnd::Emphasis
-                    | TagEnd::Strong
-                    | TagEnd::Strikethrough
-                    | TagEnd::Superscript
-                    | TagEnd::Subscript
-                    | TagEnd::Link
-                    | TagEnd::Image,
-                ) => return Some(Target::Span(self.start_of(last))),
-                _ => {}
-            }
+        self.span_before(last, start)
+            .or_else(|| self.alone_on_line(start, end))
+            .or_else(|| self.item_starting(last))
+    }
+
+    /// The span the lists at `start` come right after, if `last` ends one
+    /// there.
+    fn span_before(&self, last: usize, start: usize) -> Option<Target> {
+        let item = self.item(last);
+        if item.range.end != start {
+            return None;
         }
+        match item.event {
+            Event::Code(_) => Some(Target::Span(last)),
+            Event::End(
+                TagEnd::Emphasis
+                | TagEnd::Strong
+                | TagEnd::Strikethrough
+                | TagEnd::Superscript
+                | TagEnd::Subscript
+                | TagEnd::Link
+                | TagEnd::Image,
+            ) => Some(Target::Span(self.start_of(last))),
+            _ => None,
+        }
+    }
+
+    /// A line of its own, if nothing but indentation or quote markers comes
+    /// before the lists between `start` and `end` on their line, and nothing
+    /// after.
+    fn alone_on_line(&self, start: usize, end: usize) -> Option<Target> {
         let line_start = self.text[..start].rfind('\n').map_or(0, |i| i + 1);
         let lead = &self.text[line_start..start];
         let line_end = self.text[end..]
             .find('\n')
             .map_or(self.text.len(), |i| end + i);
         let quoted = lead.chars().all(|c| c.is_whitespace() || c == '>');
-        if quoted && self.text[end..line_end].trim().is_empty() {
-            return Some(Target::Line {
-                lazy: lead.is_empty(),
-            });
-        }
-        let item = match prev.event {
+        (quoted && self.text[end..line_end].trim().is_empty()).then_some(Target::Line {
+            lazy: lead.is_empty(),
+        })
+    }
+
+    /// The list item `last` starts, or starts the paragraph of.
+    fn item_starting(&self, last: usize) -> Option<Target> {
+        let item = match self.item(last).event {
             Event::Start(Tag::Item) => last,
             Event::Start(Tag::Paragraph) => last.checked_sub(1)?,
             _ => return None,
@@ -223,13 +278,14 @@ impl<'a> Reader<'a> {
             .then_some(Target::Item(item))
     }
 
-    /// Gives what's in a list alone on its line to what it's for: the
-    /// paragraph it starts, the paragraph it ends, splitting off the lines
-    /// after it, or for a lazy line, the outermost list or quote it's in.
-    fn line(&mut self, attributes: Attributes<'a>, toc: bool, lazy: bool, list: Range<usize>) {
-        if let Some((paragraph, _)) = self.split {
+    /// Gives `lists` alone on their line, starting at `start`, to what
+    /// they're for: the paragraph they start, the paragraph they end,
+    /// splitting off the lines after them, or for a lazy line, the
+    /// outermost list or quote they're in.
+    fn line(&mut self, lists: Lists<'a>, lazy: bool, start: usize) {
+        if let Some(split) = self.split {
             // Lists on the lines after a paragraph's lists are for it too.
-            self.attach(paragraph, attributes, toc);
+            self.attach(split.paragraph, lists);
             self.skip_soft_break();
             return;
         }
@@ -238,11 +294,11 @@ impl<'a> Reader<'a> {
         };
         match self.item(last).event {
             Event::Start(Tag::Paragraph) => {
-                self.attach(last, attributes, toc);
+                self.attach(last, lists);
                 self.skip_soft_break();
             }
             Event::SoftBreak => {
-                self.pop();
+                self.pending.pop();
                 let container = self.open.iter().copied().find(|&i| {
                     matches!(
                         self.item(i).event,
@@ -250,21 +306,24 @@ impl<'a> Reader<'a> {
                     )
                 });
                 if let Some(container) = container.filter(|_| lazy) {
-                    self.attach(container, attributes, toc);
+                    self.attach(container, lists);
                     return;
                 }
                 let Some(&block) = self.open.last() else {
                     return;
                 };
-                self.attach(block, attributes, toc);
+                self.attach(block, lists);
                 let paragraph = matches!(self.item(block).event, Event::Start(Tag::Paragraph));
                 if paragraph && self.skip_soft_break() {
-                    self.split = Some((block, list.start));
+                    self.split = Some(Split {
+                        paragraph: block,
+                        end: start,
+                    });
                 }
             }
             _ => {
                 if let Some(&block) = self.open.last() {
-                    self.attach(block, attributes, toc);
+                    self.attach(block, lists);
                 }
             }
         }
@@ -273,12 +332,7 @@ impl<'a> Reader<'a> {
     /// Gives what's in a paragraph of only lists to the block before it, if
     /// no blank line comes between them, or else the block after it.
     fn alone(&mut self, paragraph: Item<'a>) {
-        let Item {
-            attributes,
-            toc,
-            range,
-            ..
-        } = paragraph;
+        let Item { lists, range, .. } = paragraph;
         if let Some(last) = self.last_index() {
             let block = match self.item(last).event {
                 Event::End(_) => Some(self.start_of(last)),
@@ -288,17 +342,16 @@ impl<'a> Reader<'a> {
             if let Some(block) = block
                 && self.next_to(&self.item(last).range, range.start)
             {
-                self.attach(block, attributes, toc);
+                self.attach(block, lists);
                 return;
             }
         }
-        self.next = Some((attributes, toc));
+        self.next = Some(lists);
     }
 
     /// Skips the events read from the lists ending at `end`, which start at
     /// `range`, returning the range of any text left after them.
-    fn consume(&mut self, range: Range<usize>, end: usize) -> Option<Range<usize>> {
-        let mut range = range;
+    fn consume(&mut self, mut range: Range<usize>, end: usize) -> Option<Range<usize>> {
         loop {
             if range.end > end {
                 return Some(end..range.end);
@@ -322,79 +375,88 @@ impl<'a> Reader<'a> {
         soft_break
     }
 
-    fn attach(&mut self, i: usize, attributes: Attributes<'a>, toc: bool) {
-        let item = self.item_mut(i);
-        item.attributes.extend(attributes);
-        item.toc |= toc;
+    fn attach(&mut self, i: usize, lists: Lists<'a>) {
+        self.item_mut(i).lists.extend(lists);
     }
 
     /// Pushes `event`, starting a new paragraph first if lists ended the
     /// one it's in.
     fn push(&mut self, event: Event<'a>, range: Range<usize>) -> usize {
-        if let Some((paragraph, end)) = self.split.take()
+        if let Some(split) = self.split.take()
             && !matches!(event, Event::End(TagEnd::Paragraph))
         {
-            self.open.pop();
-            let first = self.item(paragraph).range.start..end;
-            let close = self.push_item(Event::End(TagEnd::Paragraph), first);
-            *self.start_of_mut(close) = paragraph;
-            let open = self.push_item(Event::Start(Tag::Paragraph), range.start..range.start);
-            self.open.push(open);
+            let first = self.item(split.paragraph).range.start..split.end;
+            self.push_item(Event::End(TagEnd::Paragraph), first);
+            self.push_item(Event::Start(Tag::Paragraph), range.start..range.start);
         }
         self.push_item(event, range)
     }
 
+    /// Pushes `event`, opening the element it starts or closing the one it
+    /// ends.
     fn push_item(&mut self, event: Event<'a>, range: Range<usize>) -> usize {
-        self.out.push(Item::new(event, range));
-        self.starts.push(0);
-        self.base + self.out.len() - 1
-    }
-
-    fn pop(&mut self) -> Item<'a> {
-        self.starts.pop();
-        self.out.pop().expect("an item to pop")
+        let i = self.base + self.pending.len();
+        let start = match event {
+            Event::Start(_) => {
+                self.open.push(i);
+                None
+            }
+            Event::End(_) => Some(
+                self.open
+                    .pop()
+                    .expect("pulldown-cmark to balance its events"),
+            ),
+            _ => None,
+        };
+        let item = Item::new(event, range);
+        self.pending.push(Pending { item, start });
+        i
     }
 
     /// Gives out the items before `end`, with their ids and languages.
     fn settle(&mut self, end: usize) {
-        let Some(len) = end.checked_sub(self.base).filter(|&len| len > 0) else {
+        if end <= self.base {
             return;
-        };
-        let items = &mut self.out[..len];
-        headings::ids(items, self.text, &mut self.ids);
-        languages(items);
+        }
+        let mut items: Vec<Item<'a>> = self
+            .pending
+            .drain(..end - self.base)
+            .map(|pending| pending.item)
+            .collect();
+        self.ids.assign(&mut items, self.text);
+        for item in &mut items {
+            item.take_language_from_classes();
+        }
+        // Taking `{#id}` off a heading can leave its text empty.
         self.ready.extend(
-            self.out
-                .drain(..len)
+            items
+                .into_iter()
                 .filter(|item| !matches!(&item.event, Event::Text(t) if t.is_empty())),
         );
-        self.starts.drain(..len);
         self.base = end;
     }
 
     /// The index of the last item read and not given out.
     fn last_index(&self) -> Option<usize> {
-        self.out.len().checked_sub(1).map(|i| self.base + i)
+        self.pending.len().checked_sub(1).map(|i| self.base + i)
     }
 
     fn get(&self, i: usize) -> Option<&Item<'a>> {
-        self.out.get(i.checked_sub(self.base)?)
+        let pending = self.pending.get(i.checked_sub(self.base)?)?;
+        Some(&pending.item)
     }
 
     fn item(&self, i: usize) -> &Item<'a> {
-        &self.out[i - self.base]
+        &self.pending[i - self.base].item
     }
 
     fn item_mut(&mut self, i: usize) -> &mut Item<'a> {
-        &mut self.out[i - self.base]
+        &mut self.pending[i - self.base].item
     }
 
+    /// The index of the start of the end at `i`.
     fn start_of(&self, i: usize) -> usize {
-        self.starts[i - self.base]
-    }
-
-    fn start_of_mut(&mut self, i: usize) -> &mut usize {
-        &mut self.starts[i - self.base]
+        self.pending[i - self.base].start.expect("an end")
     }
 
     /// Whether the innermost open element is a paragraph with nothing in it.
@@ -432,7 +494,7 @@ impl<'a> Iterator for Reader<'a> {
             }
             match self.events.next() {
                 Some((event, range)) => self.event(event, range),
-                None if !self.out.is_empty() => self.settle(self.base + self.out.len()),
+                None if !self.pending.is_empty() => self.settle(self.base + self.pending.len()),
                 None => return None,
             }
         }
@@ -440,27 +502,5 @@ impl<'a> Iterator for Reader<'a> {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.ready.len(), None)
-    }
-}
-
-/// Gives a code block without a language the one in a `language-` class.
-fn languages(items: &mut [Item<'_>]) {
-    for item in items {
-        let Event::Start(Tag::CodeBlock(kind)) = &mut item.event else {
-            continue;
-        };
-        if matches!(kind, CodeBlockKind::Fenced(info) if !info.trim().is_empty()) {
-            continue;
-        }
-        let language = item.attributes.classes.iter().find_map(|class| {
-            let language = class.strip_prefix("language-")?;
-            Some(match class {
-                Cow::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
-                Cow::Owned(_) => CowStr::from(language.to_owned()),
-            })
-        });
-        if let Some(language) = language {
-            *kind = CodeBlockKind::Fenced(language);
-        }
     }
 }

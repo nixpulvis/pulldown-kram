@@ -206,7 +206,9 @@ impl<'a> Iterator for Events<'a> {
     type Item = (Event<'a>, Attributes<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|item| (item.event, item.attributes))
+        self.0
+            .next()
+            .map(|item| (item.event, item.lists.attributes))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

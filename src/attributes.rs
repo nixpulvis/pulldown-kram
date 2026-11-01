@@ -45,30 +45,34 @@ impl<'a> Attributes<'a> {
 }
 
 /// What one or more attribute lists in a row, like `{:#id}{:.new}`, hold.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Lists<'a> {
     pub attributes: Attributes<'a>,
     /// Whether one names `toc`, asking for a table of contents.
     pub toc: bool,
-    /// How many bytes they take.
-    pub len: usize,
 }
 
 impl<'a> Lists<'a> {
-    /// The lists at the start of `text`, if it starts with one.
-    /// Definitions, `{:name: …}`, and extension tags, `{::name}` and
-    /// `{:/name}`, are read but give nothing, as neither is supported.
-    pub fn parse(text: &'a str) -> Option<Self> {
+    /// The lists at the start of `text`, if it starts with one, and how
+    /// many bytes they take. Definitions, `{:name: …}`, and extension tags,
+    /// `{::name}` and `{:/name}`, are read but give nothing, as neither is
+    /// supported.
+    pub fn parse(text: &'a str) -> Option<(Self, usize)> {
         let mut lists = Self::default();
         let mut rest = text;
         while let Some(inside) = rest.strip_prefix("{:") {
             let Some(end) = close(inside) else { break };
             lists.read(&inside[..end]);
-            let len = "{:".len() + end + "}".len();
-            lists.len += len;
-            rest = &rest[len..];
+            rest = &inside[end + "}".len()..];
         }
-        (lists.len > 0).then_some(lists)
+        let len = text.len() - rest.len();
+        (len > 0).then_some((lists, len))
+    }
+
+    /// Adds `other`'s attributes, which win over any of the same name.
+    pub fn extend(&mut self, other: Self) {
+        self.attributes.extend(other.attributes);
+        self.toc |= other.toc;
     }
 
     fn read(&mut self, list: &'a str) {
@@ -222,7 +226,7 @@ mod tests {
     #[test]
     fn reads_ids_classes_and_pairs() {
         let text = r#"{:.new}{: .old.x #id k="v \" \}" j='w'} rest"#;
-        let lists = Lists::parse(text).unwrap();
+        let (lists, len) = Lists::parse(text).unwrap();
         let attributes = lists.attributes;
         assert_eq!(attributes.classes, ["new", "old", "x"]);
         assert_eq!(attributes.id.as_deref(), Some("id"));
@@ -230,13 +234,14 @@ mod tests {
             attributes.pairs,
             [("k", Cow::from("v \" }")), ("j", Cow::from("w"))]
         );
-        assert_eq!(&text[lists.len..], " rest");
+        assert_eq!(&text[len..], " rest");
     }
 
     #[test]
     fn later_attributes_win() {
         let attributes = Lists::parse(r#"{: .a class="b c" .d id="x" #y k="1" k="2"}"#)
             .unwrap()
+            .0
             .attributes;
         assert_eq!(attributes.classes, ["b", "c", "d"]);
         assert_eq!(attributes.id.as_deref(), Some("y"));
@@ -245,22 +250,22 @@ mod tests {
 
     #[test]
     fn names_toc() {
-        assert!(Lists::parse("{:toc}").unwrap().toc);
-        assert!(!Lists::parse("{:.toc}").unwrap().toc);
+        assert!(Lists::parse("{:toc}").unwrap().0.toc);
+        assert!(!Lists::parse("{:.toc}").unwrap().0.toc);
     }
 
     #[test]
     fn definitions_and_extensions_give_nothing() {
         for list in ["{:ref: .x}", "{::comment}", "{:/comment}", "{::}"] {
-            let lists = Lists::parse(list).unwrap();
+            let (lists, len) = Lists::parse(list).unwrap();
             assert!(lists.attributes.is_empty(), "{list}");
-            assert_eq!(lists.len, list.len());
+            assert_eq!(len, list.len());
         }
     }
 
     #[test]
     fn skips_what_isnt_an_id_or_class() {
-        let attributes = Lists::parse("{: #1x .a#  bare k=v}").unwrap().attributes;
+        let attributes = Lists::parse("{: #1x .a#  bare k=v}").unwrap().0.attributes;
         assert_eq!(attributes, Attributes::default());
     }
 

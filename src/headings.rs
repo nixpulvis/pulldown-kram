@@ -7,33 +7,6 @@ use pulldown_cmark::{CowStr, Event, Tag};
 
 use crate::read::Item;
 
-/// Gives every heading an id: its own, from `{#id}` after its text or an
-/// attribute list, or else one made from its text.
-pub(crate) fn ids<'a>(items: &mut [Item<'a>], text: &'a str, ids: &mut HeaderIds) {
-    let mut i = 0;
-    while i < items.len() {
-        if !matches!(items[i].event, Event::Start(Tag::Heading { .. })) {
-            i += 1;
-            continue;
-        }
-        let end = end_of(items, i);
-        let heading = items[i].range.start;
-        let explicit = explicit_id(&mut items[i + 1..end], text, heading);
-        // An attribute list's id wins over `{#id}`, coming after it.
-        let id = items[i]
-            .attributes
-            .id
-            .clone()
-            .map(CowStr::from)
-            .or(explicit);
-        let id = id.unwrap_or_else(|| CowStr::from(ids.next(&raw_text(&items[i + 1..end]))));
-        if let Event::Start(Tag::Heading { id: slot, .. }) = &mut items[i].event {
-            *slot = Some(id);
-        }
-        i = end + 1;
-    }
-}
-
 /// Hands out ids the way kramdown's GFM parser does: the text in lowercase,
 /// keeping only word characters, dashes, spaces and tabs, with each space or
 /// tab made a dash, and a count added to repeats, like `intro-1`.
@@ -43,7 +16,36 @@ pub(crate) struct HeaderIds {
 }
 
 impl HeaderIds {
-    fn next(&mut self, text: &str) -> String {
+    /// Gives every heading in `items` an id: its own, from `{#id}` after its
+    /// text or an attribute list, or else one made from its text.
+    pub fn assign<'a>(&mut self, items: &mut [Item<'a>], text: &'a str) {
+        let mut i = 0;
+        while i < items.len() {
+            if !matches!(items[i].event, Event::Start(Tag::Heading { .. })) {
+                i += 1;
+                continue;
+            }
+            let end = Item::end_of(items, i);
+            let heading = items[i].range.start;
+            let explicit = explicit_id(&mut items[i + 1..end], text, heading);
+            // An attribute list's id wins over `{#id}`, coming after it.
+            let id = items[i]
+                .lists
+                .attributes
+                .id
+                .clone()
+                .map(CowStr::from)
+                .or(explicit);
+            let id = id.unwrap_or_else(|| CowStr::from(self.unique(&raw_text(&items[i + 1..end]))));
+            if let Event::Start(Tag::Heading { id: slot, .. }) = &mut items[i].event {
+                *slot = Some(id);
+            }
+            i = end + 1;
+        }
+    }
+
+    /// The id made from `text`, counted if it was made before.
+    fn unique(&mut self, text: &str) -> String {
         let id: String = text
             .chars()
             .flat_map(char::to_lowercase)
@@ -118,22 +120,4 @@ fn raw_text(content: &[Item<'_>]) -> String {
         }
     }
     text
-}
-
-/// The index of the end of the element starting at `start`.
-pub(crate) fn end_of(items: &[Item<'_>], start: usize) -> usize {
-    let mut depth = 0usize;
-    for (i, item) in items.iter().enumerate().skip(start) {
-        match item.event {
-            Event::Start(_) => depth += 1,
-            Event::End(_) => {
-                depth -= 1;
-                if depth == 0 {
-                    return i;
-                }
-            }
-            _ => {}
-        }
-    }
-    items.len() - 1
 }

@@ -5,21 +5,20 @@ use std::ops::Range;
 
 use pulldown_cmark::{CowStr, Event, LinkType, Tag, TagEnd};
 
-use crate::headings::end_of;
 use crate::read::Item;
 
 /// Replaces each list marked `{:toc}` with a list of links to the
 /// headings, nested by level, leaving out those with the class `no_toc`.
 pub(crate) fn tables_of_contents(items: Vec<Item<'_>>) -> Vec<Item<'_>> {
-    if !items.iter().any(|item| item.toc) {
+    if !items.iter().any(|item| item.lists.toc) {
         return items;
     }
     let entries = entries(&items);
     let mut tocs = Vec::new();
     let mut i = 0;
     while i < items.len() {
-        if items[i].toc && matches!(items[i].event, Event::Start(Tag::List(_))) {
-            let end = end_of(&items, i);
+        if items[i].lists.toc && matches!(items[i].event, Event::Start(Tag::List(_))) {
+            let end = Item::end_of(&items, i);
             let mut toc = Vec::new();
             Toc::new(&entries).write(&items, i, &mut toc);
             tocs.push((i..end + 1, toc));
@@ -55,12 +54,12 @@ fn entries<'a>(items: &[Item<'a>]) -> Vec<Entry<'a>> {
     let mut entries = Vec::new();
     for (i, item) in items.iter().enumerate() {
         if let Event::Start(Tag::Heading { level, id, .. }) = &item.event
-            && !item.attributes.has_class("no_toc")
+            && !item.lists.attributes.has_class("no_toc")
         {
             entries.push(Entry {
                 level: *level as usize,
                 id: id.clone().unwrap_or(CowStr::Borrowed("")),
-                content: i + 1..end_of(items, i),
+                content: i + 1..Item::end_of(items, i),
             });
         }
     }
@@ -109,7 +108,7 @@ impl<'e, 'a> Toc<'e, 'a> {
         };
         let range = items[list].range.clone();
         let mut start = Item::new(Event::Start(Tag::List(first)), range.clone());
-        start.attributes = items[list].attributes.clone();
+        start.lists.attributes = items[list].lists.attributes.clone();
         out.push(start);
         self.entries(&self.roots, first, items, &range, out);
         out.push(Item::new(Event::End(TagEnd::List(first.is_some())), range));
