@@ -14,9 +14,6 @@ use bitflags::bitflags;
 /// extension is, whatever `cmark` says. `cmark` adds what kramdown doesn't
 /// read, like GitHub's `> [!NOTE]` quotes.
 ///
-/// From pulldown-cmark's options, those that read an extension become that
-/// extension, and the extensions read here are all on.
-///
 /// ```
 /// use pulldown_kram::{Extensions, Options};
 /// use pulldown_kram::pulldown_cmark::Options as Cmark;
@@ -29,15 +26,8 @@ use bitflags::bitflags;
 /// let more = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
 /// assert!(more.parser_options().contains(Cmark::ENABLE_GFM));
 ///
-/// // Only some extensions, from pulldown-cmark's flags for them.
-/// let mut options = Options::from(Cmark::ENABLE_TABLES | Cmark::ENABLE_GFM);
-/// assert!(options.kramdown.contains(Extensions::ENABLE_TABLES));
-/// assert!(!options.kramdown.contains(Extensions::ENABLE_FOOTNOTES));
-/// assert_eq!(options.cmark, Cmark::ENABLE_GFM);
-///
 /// // The extension decides, not `cmark`.
-/// options.kramdown.remove(Extensions::ENABLE_TABLES);
-/// options.cmark.insert(Cmark::ENABLE_TABLES);
+/// let options = Options::new(Extensions::all() - Extensions::ENABLE_TABLES, Cmark::ENABLE_TABLES);
 /// assert!(!options.parser_options().contains(Cmark::ENABLE_TABLES));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,18 +58,6 @@ impl Options {
         let read =
             Extensions::all().cmark_options() | pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES;
         (self.cmark - read) | self.kramdown.cmark_options()
-    }
-}
-
-impl From<pulldown_cmark::Options> for Options {
-    /// `cmark`, with the extensions it reads taken out into `kramdown`,
-    /// along with every extension read here.
-    fn from(cmark: pulldown_cmark::Options) -> Self {
-        let kramdown = Extensions::from_cmark_options(cmark);
-        Self {
-            kramdown,
-            cmark: cmark - kramdown.cmark_options(),
-        }
     }
 }
 
@@ -174,19 +152,6 @@ impl Extensions {
         ),
         (Self::ENABLE_MATH, pulldown_cmark::Options::ENABLE_MATH),
     ];
-
-    /// The extensions `options` reads, and every extension read here.
-    pub fn from_cmark_options(options: pulldown_cmark::Options) -> Self {
-        Self::CMARK
-            .into_iter()
-            .fold(Self::all(), |extensions, (extension, option)| {
-                if options.contains(option) {
-                    extensions
-                } else {
-                    extensions - extension
-                }
-            })
-    }
 
     /// The pulldown-cmark options these extensions are read with.
     pub fn cmark_options(self) -> pulldown_cmark::Options {
