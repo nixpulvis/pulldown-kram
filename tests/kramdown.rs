@@ -272,13 +272,11 @@ fn all_or_nothing() {
     use pulldown_kram::Options;
     use pulldown_kram::pulldown_cmark::{Options as Cmark, Parser};
 
-    let all = Options::all();
-    assert_eq!(all.kramdown, Extensions::all());
+    let all = Options::new(Extensions::all(), Cmark::all());
     assert!(
         all.parser_options()
             .contains(Cmark::ENABLE_MATH | Cmark::ENABLE_FOOTNOTES)
     );
-    assert!(!all.parser_options().contains(Cmark::ENABLE_OLD_FOOTNOTES));
     assert!(
         !all.parser_options()
             .contains(Cmark::ENABLE_HEADING_ATTRIBUTES)
@@ -286,7 +284,7 @@ fn all_or_nothing() {
 
     // With nothing, it's pulldown-cmark's CommonMark.
     let markdown = "# A {#b}\n\n*c*{:.d} | e\n-|-\n";
-    let document = Document::new(markdown, Options::empty());
+    let document = Document::new(markdown, Options::new(Extensions::empty(), Cmark::empty()));
     let events: Vec<_> = document
         .events()
         .map(|(event, attributes)| {

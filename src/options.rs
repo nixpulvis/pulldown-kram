@@ -11,15 +11,19 @@ use bitflags::bitflags;
 /// is given in the end: the options in `cmark`, and those the extensions
 /// need.
 ///
-/// [`Options::all`] reads everything, kramdown or not. [`Options::empty`]
-/// reads plain CommonMark. pulldown-cmark's options and [`Extensions`] each
-/// convert into these too.
-/// From pulldown-cmark's options, those that read an extension become that
+/// [`Options::new`] names both halves, so everything is
+/// `Options::new(Extensions::all(), Cmark::all())` and plain CommonMark is
+/// `Options::new(Extensions::empty(), Cmark::empty())`. pulldown-cmark's
+/// options and [`Extensions`] each convert into these too. From
+/// pulldown-cmark's options, those that read an extension become that
 /// extension, and the extensions read here are all on.
 ///
 /// ```
 /// use pulldown_kram::{Extensions, Options};
 /// use pulldown_kram::pulldown_cmark::Options as Cmark;
+///
+/// let all = Options::new(Extensions::all(), Cmark::all());
+/// assert!(all.parser_options().contains(Cmark::ENABLE_MATH));
 ///
 /// let mut options = Options::from(Cmark::ENABLE_TABLES | Cmark::ENABLE_MATH);
 /// assert!(options.kramdown.contains(Extensions::ENABLE_TABLES));
@@ -39,22 +43,14 @@ pub struct Options {
 }
 
 impl Options {
-    /// Plain CommonMark: no extensions, and none of pulldown-cmark's
-    /// options.
-    pub fn empty() -> Self {
-        Extensions::empty().into()
-    }
-
-    /// Every extension, and every pulldown-cmark option that adds to them,
-    /// like math and definition lists. `ENABLE_OLD_FOOTNOTES` is left off,
-    /// as it changes the footnotes kramdown reads rather than adding to
-    /// them.
-    pub fn all() -> Self {
-        use pulldown_cmark::Options as Cmark;
-        // The old footnotes flag includes the new one, so take out only its
-        // own bit.
-        let cmark = Cmark::all() - (Cmark::ENABLE_OLD_FOOTNOTES - Cmark::ENABLE_FOOTNOTES);
-        cmark.into()
+    /// The extensions in `kramdown`, read with pulldown-cmark's options in
+    /// `cmark` and those the extensions need.
+    ///
+    /// The options in `cmark` are given to pulldown-cmark as they are.
+    /// `Cmark::all()` includes `ENABLE_OLD_FOOTNOTES`, which reads footnotes
+    /// the way pulldown-cmark used to rather than as kramdown does.
+    pub fn new(kramdown: Extensions, cmark: pulldown_cmark::Options) -> Self {
+        Self { kramdown, cmark }
     }
 
     /// The options pulldown-cmark reads with: those in `cmark` and those the
