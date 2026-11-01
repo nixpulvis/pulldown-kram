@@ -1,0 +1,207 @@
+//! Documents read as kramdown 2.5.2 reads them with GFM input, Jekyll's
+//! default. Each expected outline is kramdown's HTML for the same input,
+//! cut down to the elements and attributes the events carry.
+
+use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Options, Tag, TagEnd};
+use pulldown_kram::{Attributes, Document};
+
+/// The document's events as HTML-like text, attributes included.
+fn outline(markdown: &str) -> String {
+    let options = Options::ENABLE_SMART_PUNCTUATION | Options::ENABLE_FOOTNOTES;
+    let document = Document::new(markdown, options);
+    let mut out = String::new();
+    for (event, attributes) in document.events() {
+        match event {
+            Event::Start(tag) => {
+                let (name, extra) = match tag {
+                    Tag::Paragraph => ("p", String::new()),
+                    Tag::Heading { level, id, .. } => (
+                        ["h1", "h2", "h3", "h4", "h5", "h6"][level as usize - 1],
+                        format!(" id=\"{}\"", id.as_deref().unwrap_or("")),
+                    ),
+                    Tag::BlockQuote(_) => ("blockquote", String::new()),
+                    Tag::CodeBlock(CodeBlockKind::Fenced(lang)) if !lang.is_empty() => {
+                        ("pre", format!(" lang=\"{lang}\""))
+                    }
+                    Tag::CodeBlock(_) => ("pre", String::new()),
+                    Tag::List(None) => ("ul", String::new()),
+                    Tag::List(Some(_)) => ("ol", String::new()),
+                    Tag::Item => ("li", String::new()),
+                    Tag::Emphasis => ("em", String::new()),
+                    Tag::Strong => ("strong", String::new()),
+                    Tag::Link { dest_url, .. } => ("a", format!(" href=\"{dest_url}\"")),
+                    Tag::FootnoteDefinition(label) => ("footnote", format!(" label=\"{label}\"")),
+                    tag => panic!("unexpected {tag:?}"),
+                };
+                out.push_str(&format!("<{name}{extra}{}>", attrs(&attributes)));
+            }
+            Event::End(tag) => out.push_str(match tag {
+                TagEnd::Paragraph => "</p>",
+                TagEnd::Heading(level) => {
+                    ["</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>"][level as usize - 1]
+                }
+                TagEnd::BlockQuote(_) => "</blockquote>",
+                TagEnd::CodeBlock => "</pre>",
+                TagEnd::List(false) => "</ul>",
+                TagEnd::List(true) => "</ol>",
+                TagEnd::Item => "</li>",
+                TagEnd::Emphasis => "</em>",
+                TagEnd::Strong => "</strong>",
+                TagEnd::FootnoteDefinition => "</footnote>",
+                TagEnd::Link => "</a>",
+                tag => panic!("unexpected {tag:?}"),
+            }),
+            Event::Text(text) => out.push_str(&text),
+            Event::Code(code) => {
+                out.push_str(&format!("<code{}>{code}</code>", attrs(&attributes)))
+            }
+            Event::SoftBreak => out.push('\n'),
+            Event::Rule => out.push_str(&format!("<hr{}>", attrs(&attributes))),
+            Event::FootnoteReference(label) => out.push_str(&format!("[^{label}]")),
+            event => panic!("unexpected {event:?}"),
+        }
+    }
+    out
+}
+
+fn attrs(attributes: &Attributes) -> String {
+    let mut out = String::new();
+    if !attributes.classes.is_empty() {
+        out.push_str(&format!(" class=\"{}\"", attributes.classes.join(" ")));
+    }
+    if let Some(id) = &attributes.id {
+        out.push_str(&format!(" id=\"{id}\""));
+    }
+    for (key, value) in &attributes.pairs {
+        out.push_str(&format!(" {key}=\"{value}\""));
+    }
+    out
+}
+
+#[test]
+fn block_lists_go_to_the_block_they_touch() {
+    assert_eq!(outline("para\n{:.x}\n"), "<p class=\"x\">para</p>");
+    assert_eq!(outline("{:.x}\npara\n"), "<p class=\"x\">para</p>");
+    assert_eq!(
+        outline("## Notes\n{:.no_toc}\n\ntext\n"),
+        "<h2 id=\"notes\" class=\"no_toc\">Notes</h2><p>text</p>"
+    );
+    assert_eq!(
+        outline("~~~\ndef x\n~~~\n{: .language-ruby}\n"),
+        "<pre lang=\"ruby\" class=\"language-ruby\">def x\n</pre>"
+    );
+    assert_eq!(outline("---\n{:.x}\n"), "<hr class=\"x\">");
+}
+
+#[test]
+fn block_lists_alone_go_to_the_next_block() {
+    assert_eq!(
+        outline("para\n\n{:.x}\n\nafter\n"),
+        "<p>para</p><p class=\"x\">after</p>"
+    );
+    assert_eq!(
+        outline("para\n\n{:.x}\n\n## H\n"),
+        "<p>para</p><h2 id=\"h\" class=\"x\">H</h2>"
+    );
+    assert_eq!(outline("para\n\n{:.x}\n"), "<p>para</p>");
+}
+
+#[test]
+fn block_lists_end_paragraphs() {
+    assert_eq!(
+        outline("para\n{:.x}\nmore\n"),
+        "<p class=\"x\">para</p><p>more</p>"
+    );
+    assert_eq!(
+        outline("para\n{:.x}\n{:.y}\nmore *a*\n"),
+        "<p class=\"x y\">para</p><p>more <em>a</em></p>"
+    );
+}
+
+#[test]
+fn lazy_block_lists_go_to_the_outermost_container() {
+    assert_eq!(
+        outline("> q\n{:.x}\n"),
+        "<blockquote class=\"x\"><p>q</p></blockquote>"
+    );
+    assert_eq!(
+        outline("> > q\n{:.x}\n"),
+        "<blockquote class=\"x\"><blockquote><p>q</p></blockquote></blockquote>"
+    );
+    assert_eq!(
+        outline("- a\n\n  b\n{:.x}\n"),
+        "<ul class=\"x\"><li><p>a</p><p>b</p></li></ul>"
+    );
+}
+
+#[test]
+fn span_lists_go_to_the_span_before_them() {
+    assert_eq!(
+        outline("`x`{:.hl} and *e*{: #i k=\"v w\"}\n"),
+        "<p><code class=\"hl\">x</code> and <em id=\"i\" k=\"v w\">e</em></p>"
+    );
+    // Smart quotes split the text around quoted values.
+    assert_eq!(
+        outline("a [link](http://e.com){:hreflang=\"de\"} b\n"),
+        "<p>a <a href=\"http://e.com\" hreflang=\"de\">link</a> b</p>"
+    );
+    assert_eq!(
+        outline("*is italic*{::}*marked*{:.special} text\n"),
+        "<p><em>is italic</em><em class=\"special\">marked</em> text</p>"
+    );
+}
+
+#[test]
+fn lists_touching_nothing_stay_text() {
+    assert_eq!(outline("`code` {:.x}\n"), "<p><code>code</code> {:.x}</p>");
+    assert_eq!(outline("para {: .x}\n"), "<p>para {: .x}</p>");
+    assert_eq!(outline("```\n{:.x}\n```\n"), "<pre>{:.x}\n</pre>");
+}
+
+#[test]
+fn list_item_lists_go_to_the_item() {
+    assert_eq!(
+        outline("* {:.cls} item\n* b\n"),
+        "<ul><li class=\"cls\">item</li><li>b</li></ul>"
+    );
+}
+
+#[test]
+fn header_ids() {
+    assert_eq!(
+        outline("# One 1\n# One\n# One\n"),
+        "<h1 id=\"one-1\">One 1</h1><h1 id=\"one\">One</h1><h1 id=\"one-1\">One</h1>"
+    );
+    assert_eq!(
+        outline("# Hello #    {#custom}\n"),
+        "<h1 id=\"custom\">Hello</h1>"
+    );
+    assert_eq!(outline("## H {: #id}\n"), "<h2 id=\"h--id\">H {: #id}</h2>");
+    assert_eq!(
+        outline("## Two \"quoted\" -- dash\n"),
+        "<h2 id=\"two-quoted--dash\">Two “quoted” – dash</h2>"
+    );
+}
+
+#[test]
+fn tables_of_contents() {
+    let markdown = "* TOC\n{:toc}\n\n## See [docs](http://x.com) *now* [^1]\n\n## Two\n{:.no_toc}\n\n# Hello #    {#custom}\n\n### Deep\n\n[^1]: note\n";
+    let toc = "<ul>\
+        <li><a href=\"#see-docs-now-\">See docs <em>now</em> </a></li>\
+        <li><a href=\"#custom\">Hello</a><ul>\
+        <li><a href=\"#deep\">Deep</a></li>\
+        </ul></li>\
+        </ul>";
+    assert!(outline(markdown).starts_with(toc), "{}", outline(markdown));
+
+    let markdown = "1. TOC\n{:toc}\n\n## A\n### B\n#### C\n## D\n";
+    let toc = "<ol>\
+        <li><a href=\"#a\">A</a><ol>\
+        <li><a href=\"#b\">B</a><ol>\
+        <li><a href=\"#c\">C</a></li>\
+        </ol></li>\
+        </ol></li>\
+        <li><a href=\"#d\">D</a></li>\
+        </ol>";
+    assert!(outline(markdown).starts_with(toc), "{}", outline(markdown));
+}

@@ -1,0 +1,229 @@
+//! Rewrites the few things pulldown-cmark's CommonMark parser reads
+//! differently from kramdown, before it reads them.
+
+use std::borrow::Cow;
+
+/// Markdown inside `markdown="1"` elements gets the blank lines CommonMark
+/// needs to read it as Markdown, and a line of only a span tag, like
+/// `<img>`, starts a paragraph rather than an HTML block.
+pub(crate) fn prepare(markdown: &str) -> Cow<'_, str> {
+    let markdown = MarkdownElements::separate(markdown);
+    match SpanTags::join(&markdown) {
+        Cow::Owned(out) => Cow::Owned(out),
+        Cow::Borrowed(_) => markdown,
+    }
+}
+
+/// kramdown parses Markdown inside an HTML element marked `markdown="1"`.
+/// CommonMark only does so when blank lines separate the tags from the
+/// Markdown, so this adds them.
+struct MarkdownElements {
+    out: String,
+    /// The elements still open, innermost last.
+    open: Vec<Element>,
+    fence: Fence,
+}
+
+/// An open `markdown="1"` element.
+struct Element {
+    name: String,
+    /// How many elements of the same name are open inside it.
+    depth: usize,
+}
+
+impl MarkdownElements {
+    fn separate(markdown: &str) -> Cow<'_, str> {
+        if !markdown.contains("markdown=\"1\"") {
+            return Cow::Borrowed(markdown);
+        }
+        let mut elements = Self {
+            out: String::with_capacity(markdown.len() + 64),
+            open: Vec::new(),
+            fence: Fence::default(),
+        };
+        for line in markdown.split_inclusive('\n') {
+            elements.line(line);
+        }
+        Cow::Owned(elements.out)
+    }
+
+    fn line(&mut self, line: &str) {
+        if self.fence.contains(line) {
+            self.out.push_str(line);
+            return;
+        }
+        let trimmed = line.trim();
+        if self.closes(trimmed) {
+            self.out.push('\n');
+            self.out.push_str(line);
+            return;
+        }
+        self.out.push_str(line);
+        if let Some(name) = Element::opened_by(trimmed) {
+            if !line.ends_with('\n') {
+                self.out.push('\n');
+            }
+            self.out.push('\n');
+            self.open.push(Element { name, depth: 0 });
+        }
+    }
+
+    /// Whether `trimmed` closes the innermost open element, keeping count of
+    /// elements of the same name opened inside it.
+    fn closes(&mut self, trimmed: &str) -> bool {
+        let Some(element) = self.open.last_mut() else {
+            return false;
+        };
+        if trimmed.starts_with(&format!("</{}", element.name)) {
+            if element.depth == 0 {
+                self.open.pop();
+                return true;
+            }
+            element.depth -= 1;
+        } else if trimmed.starts_with(&format!("<{}", element.name)) {
+            element.depth += 1;
+        }
+        false
+    }
+}
+
+impl Element {
+    /// The name of the `markdown="1"` element `trimmed` opens, if it's a line
+    /// of only that tag.
+    fn opened_by(trimmed: &str) -> Option<String> {
+        if !(trimmed.starts_with('<')
+            && trimmed.ends_with('>')
+            && trimmed.contains("markdown=\"1\""))
+        {
+            return None;
+        }
+        let name: String = trimmed[1..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        (!name.is_empty()).then_some(name)
+    }
+}
+
+/// kramdown reads a line of only a span-level tag, like `<img>` or `<span>`,
+/// as the start of a paragraph, Markdown on the lines after it included.
+/// CommonMark starts an HTML block there instead, which runs to the next
+/// blank line and leaves any Markdown in it as text. Joining the next line
+/// onto the tag's makes the same paragraph of it.
+struct SpanTags;
+
+impl SpanTags {
+    /// The span-level elements kramdown keeps in paragraphs.
+    const NAMES: [&str; 38] = [
+        "a", "abbr", "acronym", "b", "bdo", "big", "br", "button", "cite", "code", "del", "dfn",
+        "em", "i", "img", "input", "ins", "kbd", "label", "mark", "option", "q", "rb", "rbc", "rp",
+        "rt", "rtc", "ruby", "samp", "select", "small", "span", "strong", "sub", "sup", "textarea",
+        "tt", "var",
+    ];
+
+    fn join(markdown: &str) -> Cow<'_, str> {
+        let mut out = String::new();
+        let mut joined = false;
+        let mut fence = Fence::default();
+        let mut lines = markdown.split_inclusive('\n').peekable();
+        while let Some(line) = lines.next() {
+            if fence.contains(line) {
+                out.push_str(line);
+                continue;
+            }
+            let next_is_text = lines.peek().is_some_and(|next| {
+                let next = next.trim();
+                !next.is_empty() && !next.starts_with("```") && !next.starts_with("~~~")
+            });
+            if next_is_text && Self::alone(line) {
+                out.push_str(line.trim_end());
+                out.push(' ');
+                joined = true;
+            } else {
+                out.push_str(line);
+            }
+        }
+        if joined {
+            Cow::Owned(out)
+        } else {
+            Cow::Borrowed(markdown)
+        }
+    }
+
+    /// Whether `line` is only a span-level tag, opening or closing, and not
+    /// indented enough to be code.
+    fn alone(line: &str) -> bool {
+        let indent = line.len() - line.trim_start().len();
+        let Some(tag) = line
+            .trim()
+            .strip_prefix('<')
+            .and_then(|tag| tag.strip_suffix('>'))
+            .filter(|tag| indent < 4 && !tag.contains(['<', '>']))
+        else {
+            return false;
+        };
+        let name: String = tag
+            .trim_start_matches('/')
+            .chars()
+            .take_while(char::is_ascii_alphanumeric)
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+        Self::NAMES.contains(&name.as_str())
+    }
+}
+
+/// Keeps track of fenced code blocks, where nothing is kramdown.
+#[derive(Default)]
+struct Fence {
+    /// The marker of the open fence, if inside one.
+    open: Option<&'static str>,
+}
+
+impl Fence {
+    /// Whether `line` is part of a fenced code block, fences included.
+    fn contains(&mut self, line: &str) -> bool {
+        let trimmed = line.trim();
+        if let Some(marker) = self.open {
+            if trimmed.starts_with(marker) {
+                self.open = None;
+            }
+            return true;
+        }
+        for marker in ["```", "~~~"] {
+            if trimmed.starts_with(marker) {
+                self.open = Some(marker);
+                return true;
+            }
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separates_markdown_from_tags() {
+        let src = "<div markdown=\"1\">\n```rust\n</div>\n```\n<div>\n</div>\n</div>\nafter\n";
+        assert_eq!(
+            prepare(src),
+            "<div markdown=\"1\">\n\n```rust\n</div>\n```\n<div>\n</div>\n\n</div>\nafter\n"
+        );
+    }
+
+    #[test]
+    fn span_tags_start_paragraphs() {
+        assert_eq!(
+            prepare("<img src=\"a\" />\n![b](c)\n"),
+            "<img src=\"a\" /> ![b](c)\n"
+        );
+        assert_eq!(
+            prepare("<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n"),
+            "<span class=\"g\"> ![a](b)\n![c](d)\n</span>\n"
+        );
+        // Not block elements, tags before a blank line or a fence, or code.
+        let src = "<div>\n*a*\n</div>\n\n<img />\n\n<b>\n```\n<b>\nx\n```\n    <b>\n    x\n";
+        assert!(matches!(prepare(src), Cow::Borrowed(_)));
+    }
+}
