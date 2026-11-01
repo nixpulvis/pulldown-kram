@@ -8,6 +8,7 @@ use std::ops::Range;
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, OffsetIter, Parser, Tag, TagEnd};
 
 use crate::attributes::Lists;
+use crate::definitions::DefinitionLists;
 use crate::headings::HeaderIds;
 use crate::{Extensions, Options};
 
@@ -525,6 +526,9 @@ impl<'a> Reader<'a> {
             .map(|pending| pending.item)
             .collect();
         self.ids.assign(&mut items, self.text, self.kramdown);
+        if self.kramdown.contains(Extensions::ENABLE_DEFINITION_LISTS) {
+            DefinitionLists::new(self.text).rewrite(&mut items);
+        }
         if self.kramdown.contains(Extensions::ENABLE_LANGUAGE_CLASSES) {
             for item in &mut items {
                 item.take_language_from_classes();

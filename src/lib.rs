@@ -3,9 +3,9 @@
 //! lists give it.
 //!
 //! ```
-//! use pulldown_kram::{Document, pulldown_cmark::{Event, Options, Tag}};
+//! use pulldown_kram::{Document, Extensions, pulldown_cmark::{Event, Tag}};
 //!
-//! let document = Document::new("# Intro\n\nSee `x`{:.new}.\n", Options::empty());
+//! let document = Document::new("# Intro\n\nSee `x`{:.new}.\n", Extensions::all());
 //! let events: Vec<_> = document.events().collect();
 //!
 //! // Headings get the id kramdown would give them.
@@ -42,8 +42,7 @@
 //! says what happens instead. Much of what's checked is CommonMark, where
 //! the two agree, and what's beyond CommonMark depends on the [`Options`]
 //! given. Each of kramdown's extensions can be left off with
-//! [`Extensions`]. Math needs pulldown-cmark's `ENABLE_MATH`, which also
-//! reads `$…$` as math, where kramdown doesn't.
+//! [`Extensions`], and `Extensions::all()` reads them all.
 //!
 //! [kramdown's syntax]: https://kramdown.gettalong.org/syntax.html
 //!
@@ -77,15 +76,16 @@
 //!   new list.
 //! - [ ] Ordered lists numbered from 1 whatever the first number. The first
 //!   number is kept.
-//! - [ ] Definition lists. Terms and `: definitions` run together into a
-//!   paragraph, unless pulldown-cmark's `ENABLE_DEFINITION_LIST` is given,
-//!   which reads them its own way.
+//! - [x] Definition lists, a term on each line and a definition's first
+//!   paragraph bare unless a blank line comes before it.
+//! - [ ] Terms on separate lines inside one span, like `*a\nb*`. They stay
+//!   one term.
 //! - [x] Tables with a header row, aligned by the header separator line.
 //! - [ ] Tables without a header row. Read as text.
 //! - [ ] Separator lines in a table body, and footer separator lines,
 //!   `|===`. Each is read as a row of dashes or equal signs.
 //! - [x] Horizontal rules.
-//! - [x] Math blocks, `$$`.
+//! - [x] Math blocks, `$$` alone in a paragraph.
 //!
 //! ## HTML
 //!
@@ -119,7 +119,10 @@
 //! - [ ] Abbreviations, `*[HTML]: …`. The definition is read as text.
 //! - [x] Dashes, ellipses and smart quotes.
 //! - [ ] Guillemets from `<<` and `>>`. Read as text, or as an HTML tag.
-//! - [x] Inline math, `$$…$$`.
+//! - [x] Inline math, `$$…$$` in a paragraph with more in it, while `$…$`
+//!   stays text.
+//! - [x] Strikethrough, `~~…~~`, from kramdown's GFM parser, while `~…~`
+//!   stays text.
 //!
 //! ## Non-content elements
 //!
@@ -130,7 +133,7 @@
 //! - [x] Span attribute lists, right after emphasis, a link, an image or a
 //!   code span.
 //! - [x] List item attribute lists, `* {:.cls} item`.
-//! - [ ] Definition attribute lists, as there are no definition lists.
+//! - [ ] Definition attribute lists, `: {:.cls} definition`. Read as text.
 //! - [x] The empty span attribute list, `{::}`, separating spans.
 //! - [ ] Attribute list definitions, `{:name: .class}`. Dropped, never
 //!   applied.
@@ -152,6 +155,7 @@
 #![warn(missing_docs)]
 
 mod attributes;
+mod definitions;
 mod headings;
 mod options;
 mod read;

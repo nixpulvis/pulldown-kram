@@ -41,6 +41,9 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                     Tag::TableHead => ("thead", String::new()),
                     Tag::TableRow => ("tr", String::new()),
                     Tag::TableCell => ("td", String::new()),
+                    Tag::DefinitionList => ("dl", String::new()),
+                    Tag::DefinitionListTitle => ("dt", String::new()),
+                    Tag::DefinitionListDefinition => ("dd", String::new()),
                     tag => panic!("unexpected {tag:?}"),
                 };
                 out.push_str(&format!("<{name}{extra}{}>", attrs(&attributes)));
@@ -65,6 +68,9 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                 TagEnd::TableHead => "</thead>",
                 TagEnd::TableRow => "</tr>",
                 TagEnd::TableCell => "</td>",
+                TagEnd::DefinitionList => "</dl>",
+                TagEnd::DefinitionListTitle => "</dt>",
+                TagEnd::DefinitionListDefinition => "</dd>",
                 tag => panic!("unexpected {tag:?}"),
             }),
             Event::Text(text) => out.push_str(&text),
@@ -73,6 +79,8 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
             }
             Event::Html(html) | Event::InlineHtml(html) => out.push_str(&html),
             Event::TaskListMarker(done) => out.push_str(if done { "[x]" } else { "[ ]" }),
+            Event::InlineMath(math) => out.push_str(&format!("\\({math}\\)")),
+            Event::DisplayMath(math) => out.push_str(&format!("\\[{}\\]", math.trim())),
             Event::SoftBreak => out.push('\n'),
             Event::Rule => out.push_str(&format!("<hr{}>", attrs(&attributes))),
             Event::FootnoteReference(label) => out.push_str(&format!("[^{label}]")),
@@ -124,6 +132,33 @@ fn extensions_read_by_pulldown_cmark() {
     );
     // Header ids leave out dashes, as kramdown's do.
     assert_eq!(outline("# a -- b\n"), "<h1 id=\"a--b\">a – b</h1>");
+}
+
+#[test]
+fn single_tildes_and_dollars_are_text() {
+    assert_eq!(
+        outline("~a~ and ~~b ~c~ d~~\n"),
+        "<p>~a~ and <del>b ~c~ d</del></p>"
+    );
+    assert_eq!(
+        outline("Costs $5, or $x$ or $$y$$.\n"),
+        "<p>Costs $5, or $x$ or \\(y\\).</p>"
+    );
+    // kramdown's math block isn't in a paragraph, but pulldown-cmark's is.
+    assert_eq!(outline("$$\nx = 1\n$$\n"), "<p>\\[x = 1\\]</p>");
+}
+
+#[test]
+fn definition_lists() {
+    assert_eq!(
+        outline("apple\n: red\n\n  more of red\n\npear\nquince\n: fruit\n\n: after\n"),
+        "<dl><dt>apple</dt><dd>red<p>more of red</p></dd>\
+        <dt>pear</dt><dt>quince</dt><dd>fruit</dd><dd><p>after</p></dd></dl>"
+    );
+    assert_eq!(
+        outline("> a\n> : b\n>\n> : c\n"),
+        "<blockquote><dl><dt>a</dt><dd>b</dd><dd><p>c</p></dd></dl></blockquote>"
+    );
 }
 
 #[test]
@@ -268,23 +303,36 @@ fn tables_of_contents() {
 }
 
 #[test]
-fn all_or_nothing() {
+fn extensions_own_their_options() {
     use pulldown_kram::Options;
     use pulldown_kram::pulldown_cmark::{Options as Cmark, Parser};
 
-    let all = Options::new(Extensions::all(), Cmark::all());
-    assert!(
-        all.parser_options()
-            .contains(Cmark::ENABLE_MATH | Cmark::ENABLE_FOOTNOTES)
+    // kramdown's syntax needs nothing more from pulldown-cmark.
+    let kramdown = Options::from(Extensions::all());
+    assert_eq!(
+        kramdown.parser_options(),
+        Cmark::ENABLE_TABLES
+            | Cmark::ENABLE_FOOTNOTES
+            | Cmark::ENABLE_STRIKETHROUGH
+            | Cmark::ENABLE_TASKLISTS
+            | Cmark::ENABLE_SMART_PUNCTUATION
+            | Cmark::ENABLE_DEFINITION_LIST
+            | Cmark::ENABLE_MATH
     );
+
+    // Options for an extension are left to it, the rest are added.
+    let more = Options::new(Extensions::empty(), Cmark::all());
+    assert!(!more.parser_options().contains(Cmark::ENABLE_TABLES));
     assert!(
-        !all.parser_options()
+        !more
+            .parser_options()
             .contains(Cmark::ENABLE_HEADING_ATTRIBUTES)
     );
+    assert!(more.parser_options().contains(Cmark::ENABLE_GFM));
 
     // With nothing, it's pulldown-cmark's CommonMark.
     let markdown = "# A {#b}\n\n*c*{:.d} | e\n-|-\n";
-    let document = Document::new(markdown, Options::new(Extensions::empty(), Cmark::empty()));
+    let document = Document::new(markdown, Options::from(Extensions::empty()));
     let events: Vec<_> = document
         .events()
         .map(|(event, attributes)| {
@@ -317,6 +365,14 @@ fn each_extension_can_be_left_off() {
     assert_eq!(
         outline_with("# a -- b\n", without(Extensions::ENABLE_TYPOGRAPHY)),
         "<h1 id=\"a----b\">a -- b</h1>"
+    );
+    assert_eq!(
+        outline_with("a\n: b\n", without(Extensions::ENABLE_DEFINITION_LISTS)),
+        "<p>a\n: b</p>"
+    );
+    assert_eq!(
+        outline_with("$$x$$\n", without(Extensions::ENABLE_MATH)),
+        "<p>$$x$$</p>"
     );
     assert_eq!(
         outline_with(
