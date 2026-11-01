@@ -135,10 +135,9 @@ impl Target {
 }
 
 impl<'a> Reader<'a> {
-    /// Reads `text` with `options`, less heading attributes, which read `{…}`
-    /// after a heading differently from kramdown.
+    /// Reads `text` with `options`.
     pub fn new(text: &'a str, options: Options) -> Self {
-        let markdown = options.markdown - pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES;
+        let markdown = options.parser_options();
         Self {
             text,
             kramdown: options.kramdown,
@@ -353,7 +352,7 @@ impl<'a> Reader<'a> {
     /// out. Anywhere else, they're for the cell.
     fn table_row(&mut self, cell: usize, lists: Lists<'a>) {
         let mut rest = Vec::new();
-        while let Some((event, range)) = self.events.next() {
+        for (event, range) in self.events.by_ref() {
             let end = matches!(event, Event::End(TagEnd::TableRow));
             let empty = matches!(
                 event,

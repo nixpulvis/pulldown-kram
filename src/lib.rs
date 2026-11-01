@@ -40,9 +40,10 @@
 //! How much of [kramdown's syntax] is understood, following its sections. A
 //! checked item reads as kramdown means it. An unchecked one doesn't, and
 //! says what happens instead. Much of what's checked is CommonMark, where
-//! the two agree, so it depends on the [`Options`] given: tables, footnotes,
-//! math and typography need pulldown-cmark's `ENABLE_` options. Each of
-//! kramdown's own additions can be left off with [`Extensions`].
+//! the two agree, and what's beyond CommonMark depends on the [`Options`]
+//! given. Each of kramdown's extensions can be left off with
+//! [`Extensions`]. Math needs pulldown-cmark's `ENABLE_MATH`, which also
+//! reads `$…$` as math, where kramdown doesn't.
 //!
 //! [kramdown's syntax]: https://kramdown.gettalong.org/syntax.html
 //!
@@ -174,7 +175,7 @@ pub struct Document<'a> {
 
 impl<'a> Document<'a> {
     /// Reads `markdown` with `options`, which may be just pulldown-cmark's,
-    /// for every kramdown extension.
+    /// for every kramdown extension, or just the [`Extensions`].
     pub fn new(markdown: &'a str, options: impl Into<Options>) -> Self {
         let options = options.into();
         Self {

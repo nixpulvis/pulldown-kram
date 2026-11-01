@@ -2,8 +2,8 @@
 //! default. Each expected outline is kramdown's HTML for the same input,
 //! cut down to the elements and attributes the events carry.
 
-use pulldown_kram::pulldown_cmark::{self, CodeBlockKind, Event, Tag, TagEnd};
-use pulldown_kram::{Attributes, Document, Extensions, Options};
+use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
+use pulldown_kram::{Attributes, Document, Extensions};
 
 /// The document's events as HTML-like text, attributes included.
 fn outline(markdown: &str) -> String {
@@ -12,13 +12,7 @@ fn outline(markdown: &str) -> String {
 
 /// [`outline`], reading only `extensions`.
 fn outline_with(markdown: &str, extensions: Extensions) -> String {
-    let options = Options {
-        markdown: pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION
-            | pulldown_cmark::Options::ENABLE_FOOTNOTES
-            | pulldown_cmark::Options::ENABLE_TABLES,
-        kramdown: extensions,
-    };
-    let document = Document::new(markdown, options);
+    let document = Document::new(markdown, extensions);
     let mut out = String::new();
     for (event, attributes) in document.events() {
         match event {
@@ -39,6 +33,7 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                     Tag::Item => ("li", String::new()),
                     Tag::Emphasis => ("em", String::new()),
                     Tag::Strong => ("strong", String::new()),
+                    Tag::Strikethrough => ("del", String::new()),
                     Tag::Link { dest_url, .. } => ("a", format!(" href=\"{dest_url}\"")),
                     Tag::FootnoteDefinition(label) => ("footnote", format!(" label=\"{label}\"")),
                     Tag::HtmlBlock => ("html", String::new()),
@@ -62,6 +57,7 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                 TagEnd::Item => "</li>",
                 TagEnd::Emphasis => "</em>",
                 TagEnd::Strong => "</strong>",
+                TagEnd::Strikethrough => "</del>",
                 TagEnd::FootnoteDefinition => "</footnote>",
                 TagEnd::Link => "</a>",
                 TagEnd::HtmlBlock => "</html>",
@@ -76,6 +72,7 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                 out.push_str(&format!("<code{}>{code}</code>", attrs(&attributes)))
             }
             Event::Html(html) | Event::InlineHtml(html) => out.push_str(&html),
+            Event::TaskListMarker(done) => out.push_str(if done { "[x]" } else { "[ ]" }),
             Event::SoftBreak => out.push('\n'),
             Event::Rule => out.push_str(&format!("<hr{}>", attrs(&attributes))),
             Event::FootnoteReference(label) => out.push_str(&format!("[^{label}]")),
@@ -117,6 +114,16 @@ fn block_lists_go_to_the_block_they_touch() {
         outline("a\n\n> b\n\nc\n{:.x}\n\nd\n"),
         "<p>a</p><blockquote><p>b</p></blockquote><p class=\"x\">c</p><p>d</p>"
     );
+}
+
+#[test]
+fn extensions_read_by_pulldown_cmark() {
+    assert_eq!(
+        outline("~~a~~\n\n* [x] b\n"),
+        "<p><del>a</del></p><ul><li>[x]b</li></ul>"
+    );
+    // Header ids leave out dashes, as kramdown's do.
+    assert_eq!(outline("# a -- b\n"), "<h1 id=\"a--b\">a – b</h1>");
 }
 
 #[test]
@@ -263,6 +270,26 @@ fn tables_of_contents() {
 #[test]
 fn each_extension_can_be_left_off() {
     let without = |extension| Extensions::all() - extension;
+    assert_eq!(
+        outline_with("a | b\n-|-\n", without(Extensions::ENABLE_TABLES)),
+        "<p>a | b\n-|-</p>"
+    );
+    assert_eq!(
+        outline_with("a[^1]\n\n[^1]: b\n", without(Extensions::ENABLE_FOOTNOTES)),
+        "<p>a<a href=\"b\">^1</a></p>"
+    );
+    assert_eq!(
+        outline_with("~~a~~\n", without(Extensions::ENABLE_STRIKETHROUGH)),
+        "<p>~~a~~</p>"
+    );
+    assert_eq!(
+        outline_with("* [x] a\n", without(Extensions::ENABLE_TASK_LISTS)),
+        "<ul><li>[x] a</li></ul>"
+    );
+    assert_eq!(
+        outline_with("# a -- b\n", without(Extensions::ENABLE_TYPOGRAPHY)),
+        "<h1 id=\"a----b\">a -- b</h1>"
+    );
     assert_eq!(
         outline_with(
             "para\n{:.x}\n",
