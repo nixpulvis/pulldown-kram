@@ -3,16 +3,16 @@
 //! cut down to the elements and attributes the events carry.
 
 use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
-use pulldown_kram::{Attributes, Document, Extensions};
+use pulldown_kram::{Attributes, Document, Extensions, Options};
 
 /// The document's events as HTML-like text, attributes included.
 fn outline(markdown: &str) -> String {
     outline_with(markdown, Extensions::all())
 }
 
-/// [`outline`], reading only `extensions`.
-fn outline_with(markdown: &str, extensions: Extensions) -> String {
-    let document = Document::new(markdown, extensions);
+/// [`outline`], read with `options`.
+fn outline_with(markdown: &str, options: impl Into<Options>) -> String {
+    let document = Document::new(markdown, options);
     let mut out = String::new();
     for (event, attributes) in document.events() {
         match event {
@@ -304,31 +304,22 @@ fn tables_of_contents() {
 
 #[test]
 fn extensions_own_their_options() {
-    use pulldown_kram::Options;
-    use pulldown_kram::pulldown_cmark::{Options as Cmark, Parser};
+    use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 
-    // kramdown's syntax needs nothing more from pulldown-cmark.
-    let kramdown = Options::from(Extensions::all());
-    assert_eq!(
-        kramdown.parser_options(),
-        Cmark::ENABLE_TABLES
-            | Cmark::ENABLE_FOOTNOTES
-            | Cmark::ENABLE_STRIKETHROUGH
-            | Cmark::ENABLE_TASKLISTS
-            | Cmark::ENABLE_SMART_PUNCTUATION
-            | Cmark::ENABLE_DEFINITION_LIST
-            | Cmark::ENABLE_MATH
+    // An option for an extension is left to it.
+    let options = Options::new(
+        Extensions::all() - Extensions::ENABLE_TABLES,
+        Cmark::ENABLE_TABLES,
     );
+    assert_eq!(outline_with("a | b\n-|-\n", options), "<p>a | b\n-|-</p>");
 
-    // Options for an extension are left to it, the rest are added.
-    let more = Options::new(Extensions::empty(), Cmark::all());
-    assert!(!more.parser_options().contains(Cmark::ENABLE_TABLES));
-    assert!(
-        !more
-            .parser_options()
-            .contains(Cmark::ENABLE_HEADING_ATTRIBUTES)
-    );
-    assert!(more.parser_options().contains(Cmark::ENABLE_GFM));
+    // The rest are added.
+    let options = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
+    let document = Document::new("> [!NOTE]\n> a\n", options);
+    assert!(matches!(
+        document.events().next(),
+        Some((Event::Start(Tag::BlockQuote(Some(BlockQuoteKind::Note))), _))
+    ));
 
     // With nothing, it's pulldown-cmark's CommonMark.
     let markdown = "# A {#b}\n\n*c*{:.d} | e\n-|-\n";

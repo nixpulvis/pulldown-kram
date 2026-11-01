@@ -14,21 +14,23 @@ use bitflags::bitflags;
 /// extension is, whatever `cmark` says. `cmark` adds what kramdown doesn't
 /// read, like GitHub's `> [!NOTE]` quotes.
 ///
+/// `cmark` never turns on `ENABLE_TABLES`, `ENABLE_FOOTNOTES`,
+/// `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS`, `ENABLE_SMART_PUNCTUATION`,
+/// `ENABLE_DEFINITION_LIST` or `ENABLE_MATH`, which the extensions decide,
+/// nor `ENABLE_HEADING_ATTRIBUTES`, which reads `{…}` after a heading
+/// differently from kramdown. `ENABLE_OLD_FOOTNOTES` changes footnotes
+/// only with [`Extensions::ENABLE_FOOTNOTES`].
+///
 /// ```
-/// use pulldown_kram::{Extensions, Options};
+/// use pulldown_kram::{Document, Extensions, Options};
 /// use pulldown_kram::pulldown_cmark::Options as Cmark;
 ///
 /// // What kramdown reads.
-/// let kramdown = Options::from(Extensions::all());
-/// assert!(kramdown.parser_options().contains(Cmark::ENABLE_TABLES));
+/// let kramdown = Document::new("a | b\n-|-\n", Extensions::all());
 ///
-/// // With GitHub's quotes too.
+/// // With GitHub's `> [!NOTE]` quotes too.
 /// let more = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
-/// assert!(more.parser_options().contains(Cmark::ENABLE_GFM));
-///
-/// // The extension decides, not `cmark`.
-/// let options = Options::new(Extensions::all() - Extensions::ENABLE_TABLES, Cmark::ENABLE_TABLES);
-/// assert!(!options.parser_options().contains(Cmark::ENABLE_TABLES));
+/// let document = Document::new("> [!NOTE]\n> a\n", more);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Options {
@@ -48,13 +50,7 @@ impl Options {
 
     /// The options pulldown-cmark reads with: those the extensions need,
     /// and the rest of `cmark`.
-    ///
-    /// An option that reads an extension is only on with the extension, so
-    /// `cmark` can't turn tables on without [`Extensions::ENABLE_TABLES`].
-    /// `ENABLE_HEADING_ATTRIBUTES` is never on, as it reads `{…}` after a
-    /// heading differently from kramdown. `ENABLE_OLD_FOOTNOTES` changes
-    /// footnotes only with [`Extensions::ENABLE_FOOTNOTES`].
-    pub fn parser_options(&self) -> pulldown_cmark::Options {
+    pub(crate) fn parser_options(&self) -> pulldown_cmark::Options {
         let read =
             Extensions::all().cmark_options() | pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES;
         (self.cmark - read) | self.kramdown.cmark_options()
@@ -154,7 +150,7 @@ impl Extensions {
     ];
 
     /// The pulldown-cmark options these extensions are read with.
-    pub fn cmark_options(self) -> pulldown_cmark::Options {
+    pub(crate) fn cmark_options(self) -> pulldown_cmark::Options {
         Self::CMARK
             .into_iter()
             .filter(|(extension, _)| self.contains(*extension))
@@ -170,5 +166,33 @@ impl Extensions {
                 | Self::ENABLE_SPAN_ATTRIBUTES
                 | Self::ENABLE_ITEM_ATTRIBUTES,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pulldown_cmark::Options as Cmark;
+
+    #[test]
+    fn kramdown_needs_nothing_more() {
+        assert_eq!(
+            Options::from(Extensions::all()).parser_options(),
+            Cmark::ENABLE_TABLES
+                | Cmark::ENABLE_FOOTNOTES
+                | Cmark::ENABLE_STRIKETHROUGH
+                | Cmark::ENABLE_TASKLISTS
+                | Cmark::ENABLE_SMART_PUNCTUATION
+                | Cmark::ENABLE_DEFINITION_LIST
+                | Cmark::ENABLE_MATH
+        );
+    }
+
+    #[test]
+    fn cmark_adds_only_what_kramdown_lacks() {
+        let options = Options::new(Extensions::empty(), Cmark::all()).parser_options();
+        assert!(!options.intersects(Extensions::all().cmark_options()));
+        assert!(!options.contains(Cmark::ENABLE_HEADING_ATTRIBUTES));
+        assert!(options.contains(Cmark::ENABLE_GFM));
     }
 }
