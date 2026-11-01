@@ -144,21 +144,23 @@
 //!
 //! - [x] Header ids, made the way kramdown's GFM parser, Jekyll's default,
 //!   makes them, from the heading's text without its markup.
-//! - [x] `{:toc}` tables of contents, nested by level, leaving out headings
-//!   with the class `no_toc`, and links inside headings.
+//! - [x] `{:toc}` tables of contents, with the `toc` feature, nested by
+//!   level, leaving out headings with the class `no_toc`, and links inside
+//!   headings. Without it, the list is left as it's written.
 
 mod attributes;
 mod headings;
 mod read;
 mod source;
+#[cfg(feature = "toc")]
+mod toc;
 
 use std::borrow::Cow;
+use std::fmt;
 
 pub use attributes::Attributes;
 pub use pulldown_cmark;
-use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Tag};
-
-use read::Item;
+use pulldown_cmark::{Event, Options};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -179,19 +181,26 @@ impl<'a> Document<'a> {
     }
 
     /// The document's events, each with the attributes kramdown gives it.
+    ///
+    /// They're read as they're asked for, a block at a time, as attribute
+    /// lists after a block are for it. With the `toc` feature, they're all
+    /// read first, for tables of contents to link to the headings after
+    /// them.
     pub fn events(&self) -> Events<'_> {
-        let mut items = read::read(&self.text, self.options);
-        headings::ids(&mut items, &self.text);
-        languages(&mut items);
-        let mut items = headings::tables_of_contents(items);
-        items.retain(|item| !matches!(&item.event, Event::Text(t) if t.is_empty()));
-        Events(items.into_iter())
+        let items = read::Reader::new(&self.text, self.options);
+        #[cfg(feature = "toc")]
+        let items = toc::tables_of_contents(items.collect()).into_iter();
+        Events(items)
     }
 }
 
+#[cfg(not(feature = "toc"))]
+type Items<'a> = read::Reader<'a>;
+#[cfg(feature = "toc")]
+type Items<'a> = std::vec::IntoIter<read::Item<'a>>;
+
 /// The events of a [`Document`], each with its attributes.
-#[derive(Debug)]
-pub struct Events<'a>(std::vec::IntoIter<Item<'a>>);
+pub struct Events<'a>(Items<'a>);
 
 impl<'a> Iterator for Events<'a> {
     type Item = (Event<'a>, Attributes<'a>);
@@ -205,26 +214,8 @@ impl<'a> Iterator for Events<'a> {
     }
 }
 
-impl ExactSizeIterator for Events<'_> {}
-
-/// Gives a code block without a language the one in a `language-` class.
-fn languages(items: &mut [Item<'_>]) {
-    for item in items {
-        let Event::Start(Tag::CodeBlock(kind)) = &mut item.event else {
-            continue;
-        };
-        if matches!(kind, CodeBlockKind::Fenced(info) if !info.trim().is_empty()) {
-            continue;
-        }
-        let language = item.attributes.classes.iter().find_map(|class| {
-            let language = class.strip_prefix("language-")?;
-            Some(match class {
-                Cow::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
-                Cow::Owned(_) => CowStr::from(language.to_owned()),
-            })
-        });
-        if let Some(language) = language {
-            *kind = CodeBlockKind::Fenced(language);
-        }
+impl fmt::Debug for Events<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Events").finish_non_exhaustive()
     }
 }

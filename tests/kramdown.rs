@@ -91,6 +91,11 @@ fn block_lists_go_to_the_block_they_touch() {
         "<pre lang=\"ruby\" class=\"language-ruby\">def x\n</pre>"
     );
     assert_eq!(outline("---\n{:.x}\n"), "<hr class=\"x\">");
+    // After blocks already read, and before more.
+    assert_eq!(
+        outline("a\n\n> b\n\nc\n{:.x}\n\nd\n"),
+        "<p>a</p><blockquote><p>b</p></blockquote><p class=\"x\">c</p><p>d</p>"
+    );
 }
 
 #[test]
@@ -104,6 +109,10 @@ fn block_lists_alone_go_to_the_next_block() {
         "<p>para</p><h2 id=\"h\" class=\"x\">H</h2>"
     );
     assert_eq!(outline("para\n\n{:.x}\n"), "<p>para</p>");
+    assert_eq!(
+        outline("a\n\nb\n\n{:.x}\n\n{:.y}\n\nc\n"),
+        "<p>a</p><p>b</p><p class=\"x y\">c</p>"
+    );
 }
 
 #[test]
@@ -183,6 +192,7 @@ fn header_ids() {
     );
 }
 
+#[cfg(feature = "toc")]
 #[test]
 fn tables_of_contents() {
     let markdown = "* TOC\n{:toc}\n\n## See [docs](http://x.com) *now* [^1]\n\n## Two\n{:.no_toc}\n\n# Hello #    {#custom}\n\n### Deep\n\n[^1]: note\n";
@@ -204,4 +214,13 @@ fn tables_of_contents() {
         <li><a href=\"#d\">D</a></li>\
         </ol>";
     assert!(outline(markdown).starts_with(toc), "{}", outline(markdown));
+}
+
+#[cfg(not(feature = "toc"))]
+#[test]
+fn tables_of_contents_need_the_feature() {
+    assert_eq!(
+        outline("* TOC\n{:toc}\n\n# A\n"),
+        "<ul><li>TOC</li></ul><h1 id=\"a\">A</h1>"
+    );
 }
