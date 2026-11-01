@@ -90,6 +90,9 @@ pub(crate) struct Reader<'a> {
     /// What lists alone between blocks give the next block.
     next: Option<Lists<'a>>,
     split: Option<Split>,
+    /// For each strikethrough open, whether it's kramdown's, `~~a~~`,
+    /// rather than `~a~`, which kramdown leaves as text.
+    strikethroughs: Vec<bool>,
     ids: HeaderIds,
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
@@ -152,12 +155,14 @@ impl<'a> Reader<'a> {
             previous_block: None,
             next: None,
             split: None,
+            strikethroughs: Vec::new(),
             ids: HeaderIds::default(),
             ready: VecDeque::new(),
         }
     }
 
     fn event(&mut self, event: Event<'a>, range: Range<usize>) {
+        let (event, range) = self.as_kramdown(event, range);
         match event {
             Event::Start(_) | Event::Rule => {
                 let top = self.open.is_empty();
@@ -199,6 +204,48 @@ impl<'a> Reader<'a> {
                 self.push(event, range);
             }
         }
+    }
+
+    /// `event` as kramdown reads its source, where pulldown-cmark reads more
+    /// into it: a single `~` and a single `$` are text, and `$$` math in
+    /// a paragraph with more in it is inline.
+    fn as_kramdown(&mut self, event: Event<'a>, range: Range<usize>) -> (Event<'a>, Range<usize>) {
+        let text = |range: Range<usize>| {
+            (
+                Event::Text(CowStr::Borrowed(&self.text[range.clone()])),
+                range,
+            )
+        };
+        match event {
+            Event::Start(Tag::Strikethrough) => {
+                let doubled = self.text[range.clone()].starts_with("~~");
+                self.strikethroughs.push(doubled);
+                if !doubled {
+                    return text(range.start..range.start + 1);
+                }
+            }
+            Event::End(TagEnd::Strikethrough) => {
+                let doubled = self.strikethroughs.pop().expect("a strikethrough open");
+                if !doubled {
+                    return text(range.end - 1..range.end);
+                }
+            }
+            Event::InlineMath(_) => return text(range),
+            Event::DisplayMath(math) if !self.alone_in_paragraph() => {
+                return (Event::InlineMath(math), range);
+            }
+            _ => {}
+        }
+        (event, range)
+    }
+
+    /// Whether the event about to be read is all there is in its
+    /// paragraph.
+    fn alone_in_paragraph(&mut self) -> bool {
+        self.pending
+            .last()
+            .is_some_and(|last| matches!(last.item.event, Event::Start(Tag::Paragraph)))
+            && matches!(self.events.peek(), Some((Event::End(TagEnd::Paragraph), _)))
     }
 
     /// Gives `lists`, `len` bytes at the start of `event`'s text, to what
