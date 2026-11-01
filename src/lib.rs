@@ -189,7 +189,7 @@ impl<'a> Document<'a> {
     pub fn events(&self) -> Events<'_> {
         let items = read::Reader::new(&self.text, self.options);
         #[cfg(feature = "toc")]
-        let items = toc::tables_of_contents(items.collect()).into_iter();
+        let items = toc::Toc::replace_lists(items.collect()).into_iter();
         Events(items)
     }
 }

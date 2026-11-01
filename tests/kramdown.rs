@@ -214,6 +214,17 @@ fn tables_of_contents() {
         <li><a href=\"#d\">D</a></li>\
         </ol>";
     assert!(outline(markdown).starts_with(toc), "{}", outline(markdown));
+
+    // Each table lists every heading, before it or after.
+    let markdown = "* TOC\n{:toc}\n\n# A\n\n* TOC\n{:toc}\n\n# B\n";
+    let toc = "<ul>\
+        <li><a href=\"#a\">A</a></li>\
+        <li><a href=\"#b\">B</a></li>\
+        </ul>";
+    assert_eq!(
+        outline(markdown),
+        format!("{toc}<h1 id=\"a\">A</h1>{toc}<h1 id=\"b\">B</h1>")
+    );
 }
 
 #[cfg(not(feature = "toc"))]
