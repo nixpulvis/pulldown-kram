@@ -11,17 +11,18 @@ use bitflags::bitflags;
 /// is given in the end: the options in `cmark`, and those the extensions
 /// need.
 ///
-/// pulldown-cmark's options and [`Extensions`] each convert into these. From
-/// pulldown-cmark's options, every extension is on, reading the document as
-/// Jekyll does.
+/// pulldown-cmark's options and [`Extensions`] each convert into these.
+/// From pulldown-cmark's options, those that read an extension become that
+/// extension, and the extensions read here are all on.
 ///
 /// ```
 /// use pulldown_kram::{Extensions, Options};
 /// use pulldown_kram::pulldown_cmark::Options as Cmark;
 ///
-/// let mut options = Options::from(Cmark::ENABLE_MATH);
-/// let parser = options.parser_options();
-/// assert!(parser.contains(Cmark::ENABLE_MATH | Cmark::ENABLE_TABLES));
+/// let mut options = Options::from(Cmark::ENABLE_TABLES | Cmark::ENABLE_MATH);
+/// assert!(options.kramdown.contains(Extensions::ENABLE_TABLES));
+/// assert!(!options.kramdown.contains(Extensions::ENABLE_FOOTNOTES));
+/// assert_eq!(options.cmark, Cmark::ENABLE_MATH);
 ///
 /// options.kramdown.remove(Extensions::ENABLE_TABLES);
 /// assert!(!options.parser_options().contains(Cmark::ENABLE_TABLES));
@@ -30,7 +31,8 @@ use bitflags::bitflags;
 pub struct Options {
     /// The kramdown extensions to read.
     pub kramdown: Extensions,
-    /// More of pulldown-cmark's options, beyond those the extensions need.
+    /// More of pulldown-cmark's options, beyond those the extensions turn
+    /// on.
     pub cmark: pulldown_cmark::Options,
 }
 
@@ -45,11 +47,13 @@ impl Options {
 }
 
 impl From<pulldown_cmark::Options> for Options {
-    /// `cmark`, with every extension.
+    /// `cmark`, with the extensions it reads taken out into `kramdown`,
+    /// along with every extension read here.
     fn from(cmark: pulldown_cmark::Options) -> Self {
+        let kramdown = Extensions::from_cmark_options(cmark);
         Self {
-            kramdown: Extensions::all(),
-            cmark,
+            kramdown,
+            cmark: cmark - kramdown.cmark_options(),
         }
     }
 }
@@ -114,19 +118,48 @@ bitflags! {
 }
 
 impl Extensions {
+    /// The extensions pulldown-cmark reads, and its option for each.
+    const CMARK: [(Self, pulldown_cmark::Options); 5] = [
+        (Self::ENABLE_TABLES, pulldown_cmark::Options::ENABLE_TABLES),
+        (
+            Self::ENABLE_FOOTNOTES,
+            pulldown_cmark::Options::ENABLE_FOOTNOTES,
+        ),
+        (
+            Self::ENABLE_STRIKETHROUGH,
+            pulldown_cmark::Options::ENABLE_STRIKETHROUGH,
+        ),
+        (
+            Self::ENABLE_TASK_LISTS,
+            pulldown_cmark::Options::ENABLE_TASKLISTS,
+        ),
+        (
+            Self::ENABLE_TYPOGRAPHY,
+            pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION,
+        ),
+    ];
+
+    /// The extensions `options` reads, and every extension read here.
+    pub fn from_cmark_options(options: pulldown_cmark::Options) -> Self {
+        Self::CMARK
+            .into_iter()
+            .fold(Self::all(), |extensions, (extension, option)| {
+                if options.contains(option) {
+                    extensions
+                } else {
+                    extensions - extension
+                }
+            })
+    }
+
     /// The pulldown-cmark options these extensions are read with.
     pub fn cmark_options(self) -> pulldown_cmark::Options {
-        use pulldown_cmark::Options as Cmark;
-        [
-            (Self::ENABLE_TABLES, Cmark::ENABLE_TABLES),
-            (Self::ENABLE_FOOTNOTES, Cmark::ENABLE_FOOTNOTES),
-            (Self::ENABLE_STRIKETHROUGH, Cmark::ENABLE_STRIKETHROUGH),
-            (Self::ENABLE_TASK_LISTS, Cmark::ENABLE_TASKLISTS),
-            (Self::ENABLE_TYPOGRAPHY, Cmark::ENABLE_SMART_PUNCTUATION),
-        ]
-        .into_iter()
-        .filter(|(extension, _)| self.contains(*extension))
-        .fold(Cmark::empty(), |options, (_, option)| options | option)
+        Self::CMARK
+            .into_iter()
+            .filter(|(extension, _)| self.contains(*extension))
+            .fold(pulldown_cmark::Options::empty(), |options, (_, option)| {
+                options | option
+            })
     }
 
     /// Whether any kind of attribute list is read.
