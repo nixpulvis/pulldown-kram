@@ -197,7 +197,7 @@ impl<'a> Document<'a> {
         {
             Items::Read(toc::Toc::replace_lists(reader.collect()).into_iter())
         } else {
-            Items::Streamed(reader)
+            Items::Streamed(Box::new(reader))
         };
         Events(items)
     }
@@ -209,7 +209,7 @@ pub struct Events<'a>(Items<'a>);
 /// Where the events come from.
 enum Items<'a> {
     /// Read as they're asked for.
-    Streamed(read::Reader<'a>),
+    Streamed(Box<read::Reader<'a>>),
     /// Read all at once.
     Read(std::vec::IntoIter<read::Item<'a>>),
 }
