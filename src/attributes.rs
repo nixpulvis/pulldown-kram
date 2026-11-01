@@ -6,17 +6,22 @@ use pulldown_cmark::CowStr;
 /// element.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attributes<'a> {
+    /// The id from `#intro` or `id="intro"`, the last one given.
     pub id: Option<CowStr<'a>>,
+    /// The classes from `.new` or `class="new"`, in the order given. As in
+    /// kramdown, `class="…"` replaces the classes before it in its list.
     pub classes: Vec<CowStr<'a>>,
     /// Every other attribute, like `hreflang="de"`, in the order given.
     pub pairs: Vec<(&'a str, CowStr<'a>)>,
 }
 
 impl<'a> Attributes<'a> {
+    /// Whether there are no attributes at all.
     pub fn is_empty(&self) -> bool {
         self.id.is_none() && self.classes.is_empty() && self.pairs.is_empty()
     }
 
+    /// Whether `class` is one of the classes.
     pub fn has_class(&self, class: &str) -> bool {
         self.classes.iter().any(|c| c.as_ref() == class)
     }
@@ -163,6 +168,9 @@ fn is_definition(list: &str) -> bool {
 /// the key, the value without its escapes, and the rest.
 fn pair(text: &str) -> Option<(&str, CowStr<'_>, &str)> {
     let len = name_len(text);
+    if len == 0 {
+        return None;
+    }
     let (key, rest) = text.split_at(len);
     let rest = rest.strip_prefix('=')?;
     let quote = rest.chars().next().filter(|c| matches!(c, '"' | '\''))?;
@@ -173,9 +181,6 @@ fn pair(text: &str) -> Option<(&str, CowStr<'_>, &str)> {
         escaped = c == '\\' && !escaped;
         end.then_some(i)
     })?;
-    if len == 0 {
-        return None;
-    }
     let value = &rest[..end];
     let value = if value.contains('\\') {
         let mut unescaped = String::with_capacity(value.len());

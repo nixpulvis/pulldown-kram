@@ -148,6 +148,8 @@
 //!   level, leaving out headings with the class `no_toc`, and links inside
 //!   headings. Without it, the list is left as it's written.
 
+#![warn(missing_docs)]
+
 mod attributes;
 mod headings;
 mod read;
