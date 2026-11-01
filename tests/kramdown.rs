@@ -14,7 +14,8 @@ fn outline(markdown: &str) -> String {
 fn outline_with(markdown: &str, extensions: Extensions) -> String {
     let options = Options {
         markdown: pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION
-            | pulldown_cmark::Options::ENABLE_FOOTNOTES,
+            | pulldown_cmark::Options::ENABLE_FOOTNOTES
+            | pulldown_cmark::Options::ENABLE_TABLES,
         kramdown: extensions,
     };
     let document = Document::new(markdown, options);
@@ -41,6 +42,10 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                     Tag::Link { dest_url, .. } => ("a", format!(" href=\"{dest_url}\"")),
                     Tag::FootnoteDefinition(label) => ("footnote", format!(" label=\"{label}\"")),
                     Tag::HtmlBlock => ("html", String::new()),
+                    Tag::Table(_) => ("table", String::new()),
+                    Tag::TableHead => ("thead", String::new()),
+                    Tag::TableRow => ("tr", String::new()),
+                    Tag::TableCell => ("td", String::new()),
                     tag => panic!("unexpected {tag:?}"),
                 };
                 out.push_str(&format!("<{name}{extra}{}>", attrs(&attributes)));
@@ -60,6 +65,10 @@ fn outline_with(markdown: &str, extensions: Extensions) -> String {
                 TagEnd::FootnoteDefinition => "</footnote>",
                 TagEnd::Link => "</a>",
                 TagEnd::HtmlBlock => "</html>",
+                TagEnd::Table => "</table>",
+                TagEnd::TableHead => "</thead>",
+                TagEnd::TableRow => "</tr>",
+                TagEnd::TableCell => "</td>",
                 tag => panic!("unexpected {tag:?}"),
             }),
             Event::Text(text) => out.push_str(&text),
@@ -107,6 +116,19 @@ fn block_lists_go_to_the_block_they_touch() {
     assert_eq!(
         outline("a\n\n> b\n\nc\n{:.x}\n\nd\n"),
         "<p>a</p><blockquote><p>b</p></blockquote><p class=\"x\">c</p><p>d</p>"
+    );
+}
+
+#[test]
+fn block_lists_after_a_table_go_to_it() {
+    let table = "<table class=\"x\"><thead><td>a</td><td>b</td></thead>\
+        <tr><td>1</td><td>2</td></tr></table>";
+    assert_eq!(outline("a | b\n--|--\n1 | 2\n{:.x}\n"), table);
+    // Beside other cells, it's text.
+    assert_eq!(
+        outline("a | b\n--|--\n{:.x} | 2\n"),
+        "<table><thead><td>a</td><td>b</td></thead>\
+        <tr><td>{:.x}</td><td>2</td></tr></table>"
     );
 }
 

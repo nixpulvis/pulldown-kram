@@ -310,6 +310,7 @@ impl<'a> Reader<'a> {
             return;
         };
         match self.item(last).event {
+            Event::Start(Tag::TableCell) => self.table_row(last, lists),
             Event::Start(Tag::Paragraph) => {
                 self.attach(last, lists);
                 self.skip_soft_break();
@@ -343,6 +344,43 @@ impl<'a> Reader<'a> {
                     self.attach(block, lists);
                 }
             }
+        }
+    }
+
+    /// Gives `lists`, alone in the table cell `cell`, to what they're for.
+    /// On the line right after a table, they're for the table, but
+    /// pulldown-cmark reads the line as one more row, so the row is left
+    /// out. Anywhere else, they're for the cell.
+    fn table_row(&mut self, cell: usize, lists: Lists<'a>) {
+        let mut rest = Vec::new();
+        while let Some((event, range)) = self.events.next() {
+            let end = matches!(event, Event::End(TagEnd::TableRow));
+            let empty = matches!(
+                event,
+                Event::Start(Tag::TableCell) | Event::End(TagEnd::TableCell)
+            );
+            rest.push((event, range));
+            if end || !empty {
+                break;
+            }
+        }
+        let first_cell = cell
+            .checked_sub(1)
+            .and_then(|row| self.get(row))
+            .is_some_and(|row| matches!(row.event, Event::Start(Tag::TableRow)));
+        let row_ended = matches!(rest.last(), Some((Event::End(TagEnd::TableRow), _)));
+        let table_ends = matches!(self.events.peek(), Some((Event::End(TagEnd::Table), _)));
+        if first_cell && row_ended && table_ends {
+            self.pending.truncate(cell - 1 - self.base);
+            self.open.truncate(self.open.len() - 2);
+            if let Some(&table) = self.open.last() {
+                self.attach(table, lists);
+            }
+            return;
+        }
+        self.attach(cell, lists);
+        for (event, range) in rest {
+            self.event(event, range);
         }
     }
 
