@@ -1,7 +1,6 @@
 //! Reads pulldown-cmark's events, taking kramdown's attribute lists out of
 //! the text and giving them to the elements they're for.
 
-use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::ops::Range;
@@ -40,8 +39,8 @@ impl<'a> Item<'a> {
         let language = self.lists.attributes.classes.iter().find_map(|class| {
             let language = class.strip_prefix("language-")?;
             Some(match class {
-                Cow::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
-                Cow::Owned(_) => CowStr::from(language.to_owned()),
+                CowStr::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
+                _ => CowStr::from(language.to_owned()),
             })
         });
         if let Some(language) = language {

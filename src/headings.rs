@@ -29,13 +29,7 @@ impl HeaderIds {
             let heading = items[i].range.start;
             let explicit = explicit_id(&mut items[i + 1..end], text, heading);
             // An attribute list's id wins over `{#id}`, coming after it.
-            let id = items[i]
-                .lists
-                .attributes
-                .id
-                .clone()
-                .map(CowStr::from)
-                .or(explicit);
+            let id = items[i].lists.attributes.id.clone().or(explicit);
             let id = id.unwrap_or_else(|| CowStr::from(self.unique(&raw_text(&items[i + 1..end]))));
             if let Event::Start(Tag::Heading { id: slot, .. }) = &mut items[i].event {
                 *slot = Some(id);

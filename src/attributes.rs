@@ -1,15 +1,15 @@
 //! kramdown's attribute lists, like `{: .new #intro lang="en"}`.
 
-use std::borrow::Cow;
+use pulldown_cmark::CowStr;
 
 /// The id, classes and other attributes kramdown's attribute lists give an
 /// element.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attributes<'a> {
-    pub id: Option<Cow<'a, str>>,
-    pub classes: Vec<Cow<'a, str>>,
+    pub id: Option<CowStr<'a>>,
+    pub classes: Vec<CowStr<'a>>,
     /// Every other attribute, like `hreflang="de"`, in the order given.
-    pub pairs: Vec<(&'a str, Cow<'a, str>)>,
+    pub pairs: Vec<(&'a str, CowStr<'a>)>,
 }
 
 impl<'a> Attributes<'a> {
@@ -18,7 +18,7 @@ impl<'a> Attributes<'a> {
     }
 
     pub fn has_class(&self, class: &str) -> bool {
-        self.classes.iter().any(|c| c == class)
+        self.classes.iter().any(|c| c.as_ref() == class)
     }
 
     /// Adds `other`'s attributes, which win over any of the same name.
@@ -32,7 +32,7 @@ impl<'a> Attributes<'a> {
         }
     }
 
-    fn set(&mut self, key: &'a str, value: Cow<'a, str>) {
+    fn set(&mut self, key: &'a str, value: CowStr<'a>) {
         match key {
             "id" => self.id = Some(value),
             "class" => self.classes = words(value),
@@ -126,9 +126,9 @@ impl<'a> Lists<'a> {
         }
         for (marker, name) in parts {
             if marker == '#' {
-                self.attributes.id = Some(Cow::Borrowed(name));
+                self.attributes.id = Some(CowStr::Borrowed(name));
             } else {
-                self.attributes.classes.push(Cow::Borrowed(name));
+                self.attributes.classes.push(CowStr::Borrowed(name));
             }
         }
     }
@@ -161,7 +161,7 @@ fn is_definition(list: &str) -> bool {
 
 /// Reads `key="value"` or `key='value'` from the start of `text`, returning
 /// the key, the value without its escapes, and the rest.
-fn pair(text: &str) -> Option<(&str, Cow<'_, str>, &str)> {
+fn pair(text: &str) -> Option<(&str, CowStr<'_>, &str)> {
     let len = name_len(text);
     let (key, rest) = text.split_at(len);
     let rest = rest.strip_prefix('=')?;
@@ -186,9 +186,9 @@ fn pair(text: &str) -> Option<(&str, Cow<'_, str>, &str)> {
                 _ => unescaped.push(c),
             }
         }
-        Cow::Owned(unescaped)
+        CowStr::from(unescaped)
     } else {
-        Cow::Borrowed(value)
+        CowStr::Borrowed(value)
     };
     Some((key, value, &rest[end + 1..]))
 }
@@ -209,12 +209,12 @@ fn is_word(c: char) -> bool {
 }
 
 /// The words of a `class="…"` value.
-fn words(value: Cow<'_, str>) -> Vec<Cow<'_, str>> {
+fn words(value: CowStr<'_>) -> Vec<CowStr<'_>> {
     match value {
-        Cow::Borrowed(value) => value.split_whitespace().map(Cow::Borrowed).collect(),
-        Cow::Owned(value) => value
+        CowStr::Borrowed(value) => value.split_whitespace().map(CowStr::Borrowed).collect(),
+        value => value
             .split_whitespace()
-            .map(|w| Cow::Owned(w.to_owned()))
+            .map(|word| CowStr::from(word.to_owned()))
             .collect(),
     }
 }
@@ -228,11 +228,11 @@ mod tests {
         let text = r#"{:.new}{: .old.x #id k="v \" \}" j='w'} rest"#;
         let (lists, len) = Lists::parse(text).unwrap();
         let attributes = lists.attributes;
-        assert_eq!(attributes.classes, ["new", "old", "x"]);
+        assert_eq!(attributes.classes, ["new".into(), "old".into(), "x".into()]);
         assert_eq!(attributes.id.as_deref(), Some("id"));
         assert_eq!(
             attributes.pairs,
-            [("k", Cow::from("v \" }")), ("j", Cow::from("w"))]
+            [("k", CowStr::from("v \" }")), ("j", CowStr::from("w"))]
         );
         assert_eq!(&text[len..], " rest");
     }
@@ -243,9 +243,9 @@ mod tests {
             .unwrap()
             .0
             .attributes;
-        assert_eq!(attributes.classes, ["b", "c", "d"]);
+        assert_eq!(attributes.classes, ["b".into(), "c".into(), "d".into()]);
         assert_eq!(attributes.id.as_deref(), Some("y"));
-        assert_eq!(attributes.pairs, [("k", Cow::from("2"))]);
+        assert_eq!(attributes.pairs, [("k", CowStr::from("2"))]);
     }
 
     #[test]
