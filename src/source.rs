@@ -48,7 +48,7 @@ impl MarkdownElements {
     }
 
     fn line(&mut self, line: &str) {
-        if self.fence.contains(line) {
+        if self.fence.read(line) {
             self.out.push_str(line);
             return;
         }
@@ -74,14 +74,21 @@ impl MarkdownElements {
         let Some(element) = self.open.last_mut() else {
             return false;
         };
-        if trimmed.starts_with(&format!("</{}", element.name)) {
-            if element.depth == 0 {
-                self.open.pop();
-                return true;
+        match Tag::starting(trimmed) {
+            Some(tag) if tag.name == element.name && tag.closing => {
+                if element.depth == 0 {
+                    self.open.pop();
+                    return true;
+                }
+                element.depth -= 1;
             }
-            element.depth -= 1;
-        } else if trimmed.starts_with(&format!("<{}", element.name)) {
-            element.depth += 1;
+            // One closed on the same line, like `<div>x</div>`, isn't open.
+            Some(tag)
+                if tag.name == element.name && !trimmed.contains(&format!("</{}", tag.name)) =>
+            {
+                element.depth += 1;
+            }
+            _ => {}
         }
         false
     }
@@ -91,17 +98,36 @@ impl Element {
     /// The name of the `markdown="1"` element `trimmed` opens, if it's a line
     /// of only that tag.
     fn opened_by(trimmed: &str) -> Option<String> {
-        if !(trimmed.starts_with('<')
-            && trimmed.ends_with('>')
-            && trimmed.contains("markdown=\"1\""))
-        {
+        if !(trimmed.ends_with('>') && trimmed.contains("markdown=\"1\"")) {
             return None;
         }
-        let name: String = trimmed[1..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric())
-            .collect();
-        (!name.is_empty()).then_some(name)
+        let tag = Tag::starting(trimmed).filter(|tag| !tag.closing)?;
+        Some(tag.name.to_owned())
+    }
+}
+
+/// The tag at the start of a line.
+struct Tag<'a> {
+    name: &'a str,
+    /// Whether it's a closing tag, like `</div>`.
+    closing: bool,
+}
+
+impl<'a> Tag<'a> {
+    /// The tag `trimmed` starts with, if it starts with one.
+    fn starting(trimmed: &'a str) -> Option<Self> {
+        let rest = trimmed.strip_prefix('<')?;
+        let (rest, closing) = match rest.strip_prefix('/') {
+            Some(rest) => (rest, true),
+            None => (rest, false),
+        };
+        let len = rest
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(rest.len());
+        (len > 0).then(|| Self {
+            name: &rest[..len],
+            closing,
+        })
     }
 }
 
@@ -127,7 +153,7 @@ impl SpanTags {
         let mut fence = Fence::default();
         let mut lines = markdown.split_inclusive('\n').peekable();
         while let Some(line) = lines.next() {
-            if fence.contains(line) {
+            if fence.read(line) {
                 out.push_str(line);
                 continue;
             }
@@ -175,23 +201,27 @@ impl SpanTags {
 /// Keeps track of fenced code blocks, where nothing is kramdown.
 #[derive(Default)]
 struct Fence {
-    /// The marker of the open fence, if inside one.
-    open: Option<&'static str>,
+    /// The character and length of the open fence, if inside one.
+    open: Option<(char, usize)>,
 }
 
 impl Fence {
-    /// Whether `line` is part of a fenced code block, fences included.
-    fn contains(&mut self, line: &str) -> bool {
+    /// Reads `line`, returning whether it's part of a fenced code block,
+    /// fences included. A fence closes at a line of only as many of its
+    /// characters or more.
+    fn read(&mut self, line: &str) -> bool {
         let trimmed = line.trim();
-        if let Some(marker) = self.open {
-            if trimmed.starts_with(marker) {
+        let run = |c: char| trimmed.len() - trimmed.trim_start_matches(c).len();
+        if let Some((c, len)) = self.open {
+            if run(c) >= len && trimmed.trim_start_matches(c).is_empty() {
                 self.open = None;
             }
             return true;
         }
-        for marker in ["```", "~~~"] {
-            if trimmed.starts_with(marker) {
-                self.open = Some(marker);
+        for c in ['`', '~'] {
+            let len = run(c);
+            if len >= 3 {
+                self.open = Some((c, len));
                 return true;
             }
         }
@@ -209,6 +239,19 @@ mod tests {
         assert_eq!(
             prepare(src),
             "<div markdown=\"1\">\n\n```rust\n</div>\n```\n<div>\n</div>\n\n</div>\nafter\n"
+        );
+        // Elements closed on their own line, or only alike in their start,
+        // don't nest.
+        let src = "<p markdown=\"1\">\n<p>x</p>\n<pre>\n</pre>\n</p>\n";
+        assert_eq!(
+            prepare(src),
+            "<p markdown=\"1\">\n\n<p>x</p>\n<pre>\n</pre>\n\n</p>\n"
+        );
+        // A fence only closes with as many marks.
+        let src = "<div markdown=\"1\">\n````\n```\n</div>\n````\n</div>\n";
+        assert_eq!(
+            prepare(src),
+            "<div markdown=\"1\">\n\n````\n```\n</div>\n````\n\n</div>\n"
         );
     }
 
