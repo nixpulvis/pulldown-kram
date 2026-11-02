@@ -59,6 +59,5 @@ span/abbreviations/abbrev_in_html # markdown="span" left in the HTML, its text n
 span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks
 span/extension/options # options extension
 span/math/normal # \$ escapes before $$ math kept or read differently
-span/text_substitutions/entities # \& escape kept
 span/text_substitutions/typography # guillemets; << read as an HTML tag
 span/text_substitutions/typography_subst # guillemets from << and >> read as text or HTML

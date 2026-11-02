@@ -619,9 +619,36 @@ impl<'a> Reader<'a> {
                 };
                 return (event, range);
             }
+            Event::Text(text)
+                if self.kramdown.contains(Extensions::ENABLE_KRAMDOWN_ESCAPES)
+                    && !self.pending.in_code_block()
+                    && self.escaped_by_commonmark_only(&text, range.start) =>
+            {
+                // The text, from the backslash before it in the source.
+                let source = &self.text[range.start - 1..range.end];
+                let text = if source[1..] == *text {
+                    CowStr::Borrowed(source)
+                } else {
+                    CowStr::from(format!("\\{text}"))
+                };
+                return (Event::Text(text), range.start - 1..range.end);
+            }
             _ => {}
         }
         (event, range)
+    }
+
+    /// Whether `text`, read at `start`, starts with a character escaped by
+    /// a backslash, which CommonMark escapes but kramdown doesn't.
+    fn escaped_by_commonmark_only(&self, text: &str, start: usize) -> bool {
+        let Some(c) = text.chars().next() else {
+            return false;
+        };
+        let before = &self.text[..start];
+        let backslashes = before.len() - before.trim_end_matches('\\').len();
+        matches!(c, '&' | ',' | '/' | ';' | '?' | '@' | '^' | '%')
+            && self.text[start..].starts_with(c)
+            && !backslashes.is_multiple_of(2)
     }
 
     /// `text` without the whitespace around it.

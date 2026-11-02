@@ -581,6 +581,17 @@ fn abbreviations() {
 }
 
 #[test]
+fn kramdown_escapes() {
+    let extension = Extension::new(Extensions::ENABLE_KRAMDOWN_ESCAPES);
+    // A backslash before a character kramdown doesn't escape is kept.
+    extension.reads(
+        "\\& \\* \\\\& \\/\n",
+        "<p>\\&amp; * \\&amp; \\/</p>\n",
+        "<p>&amp; * \\&amp; /</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

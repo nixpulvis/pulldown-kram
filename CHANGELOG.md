@@ -74,3 +74,5 @@ The first release.
 - `Extensions::ENABLE_ABBREVIATIONS` reads kramdown's abbreviations,
   `*[HTML]: HyperText Markup Language`, giving each use of one in the text
   out as an `<abbr>` with its title, in HTML events.
+- `Extensions::ENABLE_KRAMDOWN_ESCAPES` keeps the backslash before a
+  character kramdown doesn't escape, like `\&`, which CommonMark escapes.

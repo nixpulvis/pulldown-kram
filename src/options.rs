@@ -178,6 +178,10 @@ bitflags! {
         /// Abbreviations, `*[HTML]: HyperText Markup Language`, making each
         /// use of one in the text an `<abbr>` with its title.
         const ENABLE_ABBREVIATIONS = 1 << 25;
+        /// Backslash escapes only for the characters kramdown escapes,
+        /// keeping the backslash before any other, like `\&`, which
+        /// CommonMark escapes as it does all ASCII punctuation.
+        const ENABLE_KRAMDOWN_ESCAPES = 1 << 26;
     }
 }
 

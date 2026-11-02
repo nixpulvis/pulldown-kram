@@ -51,7 +51,8 @@
 //!
 //! ## Source text
 //!
-//! - [x] Backslash escapes, for every character kramdown escapes.
+//! - [x] Backslash escapes, for every character kramdown escapes, and only
+//!   those, the backslash before any other kept.
 //! - [x] Tab stops at multiples of four.
 //! - [ ] Headers starting only on a block boundary. CommonMark lets an atx
 //!   or setext header interrupt a paragraph, so `para\n# Not` has a heading.
