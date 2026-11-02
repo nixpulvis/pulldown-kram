@@ -145,6 +145,8 @@
 //! - [ ] The `nomarkdown` extension. Its tags are dropped and its body is
 //!   read as Markdown.
 //! - [ ] The `options` extension. Dropped.
+//! - [x] Tags of extensions kramdown doesn't have, like `{::something}`,
+//!   kept as text.
 //!
 //! ## Converter
 //!

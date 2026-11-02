@@ -52,7 +52,6 @@ block/09_html/xml # XML-namespaced tags not read as HTML
 block/11_ial/nested # block attribute lists on HTML blocks
 block/11_ial/simple # attribute list definitions; block attribute list after a list item
 block/12_extension/comment # comment extension
-block/12_extension/ignored # unknown extensions dropped instead of kept as text
 block/12_extension/nomarkdown # nomarkdown extension
 block/12_extension/options # options extension; markdown="1" span content
 block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition attribute lists; end-of-block marker

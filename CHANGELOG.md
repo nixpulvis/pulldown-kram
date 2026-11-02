@@ -19,3 +19,5 @@ The first release.
   100,000 items, or as many as the document has if more. The lists marked
   `{:toc}` past that stay as written.
 - An attribute list with a word like `#aé` no longer panics.
+- The tags of extensions kramdown doesn't have, like `{::something}`, stay
+  text, as in kramdown, rather than being dropped.

@@ -108,13 +108,17 @@ pub(crate) struct Lists<'a> {
 
 impl<'a> Lists<'a> {
     /// The lists at the start of `text`, if it starts with one, and how
-    /// many bytes they take. Definitions, `{:name: …}`, and extension tags,
-    /// `{::name}` and `{:/name}`, are read but give nothing, as neither is
-    /// supported.
+    /// many bytes they take. Definitions, `{:name: …}`, and the tags of
+    /// kramdown's extensions, `{::name}` and `{:/name}`, are read but give
+    /// nothing, as neither is supported. A tag of any other extension isn't
+    /// a list, and stays text, as in kramdown.
     pub fn parse(text: &'a str) -> Option<(Self, usize)> {
         let mut lists = Self::default();
         let mut rest = text;
         while let Some((list, after)) = List::first(rest) {
+            if list.is_unknown_extension() {
+                break;
+            }
             lists.read(list);
             rest = after;
         }
@@ -212,6 +216,16 @@ impl<'a> List<'a> {
     fn gives_nothing(self) -> bool {
         let len = Self::name_len(self.0);
         self.0.starts_with([':', '/']) || (len > 0 && self.0[len..].starts_with(':'))
+    }
+
+    /// Whether it's the tag of an extension kramdown doesn't have, like
+    /// `{::something}` or `{:/something}`.
+    fn is_unknown_extension(self) -> bool {
+        let Some(tag) = self.0.strip_prefix([':', '/']) else {
+            return false;
+        };
+        let len = Self::name_len(tag);
+        len > 0 && !matches!(&tag[..len], "comment" | "nomarkdown" | "options")
     }
 
     /// Its pairs and words, in order.
@@ -331,11 +345,26 @@ mod tests {
 
     #[test]
     fn lists_parse_definitions_and_extensions_give_nothing() {
-        for list in ["{:ref: .x}", "{::comment}", "{:/comment}", "{::}"] {
+        for list in [
+            "{:ref: .x}",
+            "{::comment}",
+            "{:/comment}",
+            "{::options a=\"b\" /}",
+            "{::}",
+        ] {
             let (lists, len) = Lists::parse(list).unwrap();
             assert!(lists.attributes.is_empty(), "{list}");
             assert_eq!(len, list.len());
         }
+    }
+
+    #[test]
+    fn lists_parse_leaves_unknown_extensions_as_text() {
+        for list in ["{::something}", "{::something/}", "{:/something}"] {
+            assert!(Lists::parse(list).is_none(), "{list}");
+        }
+        let (_, len) = Lists::parse("{:.a}{::something}").unwrap();
+        assert_eq!(len, "{:.a}".len());
     }
 
     #[test]
