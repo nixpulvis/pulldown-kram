@@ -183,7 +183,7 @@ pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
-use source::{DefinitionLines, MarkdownElements, Offsets, SpanTags};
+use source::{AttributeLines, DefinitionLines, MarkdownElements, Offsets, SpanTags};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -215,6 +215,14 @@ impl<'a> Document<'a> {
         {
             text = Cow::Owned(joined);
             offsets = offsets.then(joins);
+        }
+        if options
+            .kramdown
+            .contains(Extensions::ENABLE_BLOCK_ATTRIBUTES)
+            && let (Cow::Owned(separated), lines) = AttributeLines::separate(&text)
+        {
+            text = Cow::Owned(separated);
+            offsets = offsets.then(lines);
         }
         if options
             .kramdown

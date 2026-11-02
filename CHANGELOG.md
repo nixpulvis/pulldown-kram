@@ -36,3 +36,5 @@ The first release.
 - A block attribute list on the line before a definition list's first
   term, or lazily after its last definition, is for the list, rather than
   an empty term before it or the last definition.
+- An indented code block right after a line of block attribute lists is
+  read as code, as in kramdown, rather than as more of the paragraph.

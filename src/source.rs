@@ -5,6 +5,8 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+use crate::attributes::Lists;
+
 /// Maps offsets in rewritten text back to the text it was rewritten from.
 ///
 /// Text outside the edits is the same in both, so its offsets only move by
@@ -395,6 +397,85 @@ impl SpanTags {
     }
 }
 
+/// kramdown reads a line of only attribute lists as a block of its own,
+/// ending the one before it. CommonMark reads a line indented as code
+/// right after it as more of the paragraph the lists are in, so this puts
+/// a blank line between them, outside lists, quotes and HTML, where one
+/// would end more than the paragraph.
+pub(crate) struct AttributeLines;
+
+impl AttributeLines {
+    /// `markdown`, with a blank line after each unindented line of only
+    /// attribute lists that code comes right after, and the offsets of the
+    /// lines added.
+    pub fn separate(markdown: &str) -> (Cow<'_, str>, Offsets) {
+        if !markdown.contains("{:") {
+            return (Cow::Borrowed(markdown), Offsets::default());
+        }
+        let mut out = Rewrite {
+            out: String::with_capacity(markdown.len() + 16),
+            ..Rewrite::default()
+        };
+        let mut fence = Fence::default();
+        // Whether the lines since the last blank one may be in a list, a
+        // quote or HTML.
+        let mut contained = false;
+        let mut after_blank = true;
+        let mut lines = markdown.split_inclusive('\n').peekable();
+        while let Some(line) = lines.next() {
+            out.keep(line);
+            if fence.read(line) {
+                after_blank = false;
+                continue;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                after_blank = true;
+                continue;
+            }
+            let indent = Self::indent(line);
+            if after_blank {
+                contained = (1..4).contains(&indent)
+                    || indent == 0 && (trimmed.starts_with(['<', '>']) || Self::item(trimmed));
+                after_blank = false;
+            }
+            let only_lists = || Lists::parse(trimmed).is_some_and(|(_, len)| len == trimmed.len());
+            let code_next = lines
+                .peek()
+                .is_some_and(|next| !next.trim().is_empty() && Self::indent(next) >= 4);
+            if !contained && indent == 0 && code_next && only_lists() {
+                out.insert("\n");
+            }
+        }
+        out.finish(markdown)
+    }
+
+    /// Whether `trimmed` starts a list item, like `* a` or `1. a`.
+    fn item(trimmed: &str) -> bool {
+        let digits = trimmed.trim_start_matches(|c: char| c.is_ascii_digit());
+        let rest = if digits.len() < trimmed.len() {
+            digits.strip_prefix(['.', ')'])
+        } else {
+            trimmed.strip_prefix(['*', '-', '+'])
+        };
+        rest.is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '\t']))
+    }
+
+    /// The columns `line` is indented by, with tab stops at multiples of
+    /// four.
+    fn indent(line: &str) -> usize {
+        let mut columns = 0;
+        for c in line.chars() {
+            match c {
+                ' ' => columns += 1,
+                '\t' => columns += 4 - columns % 4,
+                _ => break,
+            }
+        }
+        columns
+    }
+}
+
 /// kramdown reads two things about definitions differently from
 /// pulldown-cmark, which this rewrites the lines for. A `:` more than one
 /// blank line after the terms starts no definition, so it's escaped. And a
@@ -739,6 +820,22 @@ mod tests {
         assert_eq!(was(src, &text, &offsets, "-"), "\n");
         assert_eq!(was(src, &text, &offsets, "cd\n"), "cd\n");
         assert_ranges_fit(src, &text, &offsets);
+    }
+
+    #[test]
+    fn attribute_lines_separate_ends_a_line_of_lists_before_code() {
+        let src = "a\n{:.x}\n    b\n\n{:.y}\n\tc\n";
+        let (text, offsets) = AttributeLines::separate(src);
+        assert_eq!(text, "a\n{:.x}\n\n    b\n\n{:.y}\n\n\tc\n");
+        assert_eq!(was(src, &text, &offsets, "{:.x}\n\n"), "{:.x}\n");
+        assert_ranges_fit(src, &text, &offsets);
+        // Not before what isn't code, after more than lists, in a list, a
+        // quote, HTML or a fence, or indented.
+        let src = "{:.x}\n  a\n\nb {:.x}\n    c\n\n* d\n{:.x}\n    e\n\n> f\n{:.x}\n    g\n\n\
+            <div>\n{:.x}\n    h\n\n```\n{:.x}\n    i\n```\n\n  j\n {:.x}\n    k\n";
+        let (text, offsets) = AttributeLines::separate(src);
+        assert!(matches!(text, Cow::Borrowed(_)));
+        assert!(offsets.is_empty());
     }
 
     #[test]

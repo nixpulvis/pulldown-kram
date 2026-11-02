@@ -20,7 +20,6 @@ block/06_codeblock/lazy # lazy lines wrapped onto an indented code block
 block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented code block
 block/06_codeblock/rouge/simple # end-of-block marker ends the code block in kramdown
 block/06_codeblock/with_eob_marker # end-of-block marker ends the code block in kramdown
-block/06_codeblock/with_ial # block attribute list between code blocks
 block/07_horizontal_rule/error # long dash runs made into other dashes
 block/08_list/escaping # lists starting at any number interrupting a paragraph
 block/08_list/item_ial # nomarkdown extension

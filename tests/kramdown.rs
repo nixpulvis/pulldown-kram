@@ -202,6 +202,17 @@ fn block_attributes() {
         "<hr class=\"x\" />\n",
         "<hr />\n<p>{:.x}</p>\n",
     );
+    // Code right after them is a block of its own, not more of their line.
+    extension.reads(
+        "{:.x}\n    code\n",
+        "<pre class=\"x\"><code>code\n</code></pre>\n",
+        "<p>{:.x}\ncode</p>\n",
+    );
+    extension.reads(
+        "    a\n{:.x}\n    b\n",
+        "<pre class=\"x\"><code>a\n</code></pre>\n<pre><code>b\n</code></pre>\n",
+        "<pre><code>a\n</code></pre>\n<p>{:.x}\nb</p>\n",
+    );
     // After blocks already read, and before more.
     extension.reads(
         "a\n\n> b\n\nc\n{:.x}\n\nd\n",
