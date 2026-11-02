@@ -398,16 +398,16 @@ impl SpanTags {
 }
 
 /// kramdown reads a line of only attribute lists as a block of its own,
-/// ending the one before it. CommonMark reads a line indented as code
-/// right after it as more of the paragraph the lists are in, so this puts
-/// a blank line between them, outside lists, quotes and HTML, where one
-/// would end more than the paragraph.
+/// ending the one before it. CommonMark reads a line indented as code, or
+/// a link definition, right after it as more of the paragraph the lists
+/// are in, so this puts a blank line between them, outside lists, quotes
+/// and HTML, where one would end more than the paragraph.
 pub(crate) struct AttributeLines;
 
 impl AttributeLines {
     /// `markdown`, with a blank line after each unindented line of only
-    /// attribute lists that code comes right after, and the offsets of the
-    /// lines added.
+    /// attribute lists that code or a link definition comes right after,
+    /// and the offsets of the lines added.
     pub fn separate(markdown: &str) -> (Cow<'_, str>, Offsets) {
         if !markdown.contains("{:") {
             return (Cow::Borrowed(markdown), Offsets::default());
@@ -440,14 +440,26 @@ impl AttributeLines {
                 after_blank = false;
             }
             let only_lists = || Lists::parse(trimmed).is_some_and(|(_, len)| len == trimmed.len());
-            let code_next = lines
-                .peek()
-                .is_some_and(|next| !next.trim().is_empty() && Self::indent(next) >= 4);
-            if !contained && indent == 0 && code_next && only_lists() {
+            let block_next = lines.peek().is_some_and(|next| {
+                let indent = Self::indent(next);
+                let next = next.trim();
+                !next.is_empty() && (indent >= 4 || Self::link_definition(next))
+            });
+            if !contained && indent == 0 && block_next && only_lists() {
                 out.insert("\n");
             }
         }
         out.finish(markdown)
+    }
+
+    /// Whether `trimmed` looks like the start of a link definition, like
+    /// `[a]: b`, but not a footnote's.
+    fn link_definition(trimmed: &str) -> bool {
+        trimmed
+            .strip_prefix('[')
+            .filter(|label| !label.starts_with('^'))
+            .and_then(|label| label.find(']'))
+            .is_some_and(|end| trimmed[end + 2..].starts_with(':'))
     }
 
     /// Whether `trimmed` starts a list item, like `* a` or `1. a`.
@@ -823,16 +835,20 @@ mod tests {
     }
 
     #[test]
-    fn attribute_lines_separate_ends_a_line_of_lists_before_code() {
-        let src = "a\n{:.x}\n    b\n\n{:.y}\n\tc\n";
+    fn attribute_lines_separate_ends_a_line_of_lists_before_code_or_a_link_definition() {
+        let src = "a\n{:.x}\n    b\n\n{:.y}\n\tc\n\n{:.z}\n[d]: e\n";
         let (text, offsets) = AttributeLines::separate(src);
-        assert_eq!(text, "a\n{:.x}\n\n    b\n\n{:.y}\n\n\tc\n");
+        assert_eq!(
+            text,
+            "a\n{:.x}\n\n    b\n\n{:.y}\n\n\tc\n\n{:.z}\n\n[d]: e\n"
+        );
         assert_eq!(was(src, &text, &offsets, "{:.x}\n\n"), "{:.x}\n");
         assert_ranges_fit(src, &text, &offsets);
-        // Not before what isn't code, after more than lists, in a list, a
-        // quote, HTML or a fence, or indented.
-        let src = "{:.x}\n  a\n\nb {:.x}\n    c\n\n* d\n{:.x}\n    e\n\n> f\n{:.x}\n    g\n\n\
-            <div>\n{:.x}\n    h\n\n```\n{:.x}\n    i\n```\n\n  j\n {:.x}\n    k\n";
+        // Not before what isn't code or a link definition, after more than
+        // lists, in a list, a quote, HTML or a fence, or indented.
+        let src = "{:.x}\n  a\n\n{:.x}\n[^b]: c\n\n{:.x}\n[d] e: f\n\nb {:.x}\n    c\n\n\
+            * d\n{:.x}\n    e\n\n> f\n{:.x}\n    g\n\n<div>\n{:.x}\n    h\n\n```\n{:.x}\n    i\n\
+            ```\n\n  j\n {:.x}\n    k\n";
         let (text, offsets) = AttributeLines::separate(src);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(offsets.is_empty());

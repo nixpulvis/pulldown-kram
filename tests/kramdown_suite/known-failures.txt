@@ -67,7 +67,6 @@ man/example # list item paragraphs; tables without a header row
 span/01_link/image_in_a # image markup inside image alt text
 span/01_link/inline # link text with brackets; spaces and parens in inline link URLs
 span/01_link/link_defs # first link definition wins; spaces in link definition URLs
-span/01_link/link_defs_with_ial # attribute lists on link definitions
 span/01_link/reference # space between a reference link's brackets; spaces in a link definition's URL
 span/02_emphasis/empty # empty emphasis
 span/02_emphasis/errors # emphasis delimiter runs

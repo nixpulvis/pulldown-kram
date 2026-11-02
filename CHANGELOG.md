@@ -38,3 +38,7 @@ The first release.
   an empty term before it or the last definition.
 - An indented code block right after a line of block attribute lists is
   read as code, as in kramdown, rather than as more of the paragraph.
+- Block attribute lists on the line before or after a link definition, or
+  alone between blocks before one, go to the links and images that use
+  it, as in kramdown. One before a definition no longer keeps it from
+  being read, and one after no longer goes to the next block.

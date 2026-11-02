@@ -301,6 +301,13 @@ fn block_attributes() {
         "<dl class=\"x\"><dt>a</dt>\n<dd>b<p>c</p>\n</dd>\n</dl>\n",
         "<dl><dt>a</dt>\n<dd>b<p>c\n{:.x}</p>\n</dd>\n</dl>\n",
     );
+    // Before or after a link definition, for the links and images using
+    // it, and not the block after.
+    extension.reads(
+        "[a] and ![b][a]\n\n{:.x}\n[a]: /u\n{:.y}\n\ntext\n",
+        "<p><a class=\"x y\" href=\"/u\">a</a> and <img class=\"x y\" src=\"/u\" alt=\"b\" /></p>\n<p>text</p>\n",
+        "<p>[a] and ![b][a]</p>\n<p>{:.x}\n[a]: /u\n{:.y}</p>\n<p>text</p>\n",
+    );
 }
 
 #[test]

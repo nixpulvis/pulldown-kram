@@ -5,7 +5,9 @@ use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, CowStr, Event, OffsetIter, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    CodeBlockKind, CowStr, Event, LinkType, OffsetIter, Parser, RefDefs, Tag, TagEnd,
+};
 
 use crate::attributes::Lists;
 use crate::definitions::DefinitionLists;
@@ -142,6 +144,7 @@ pub(crate) struct Reader<'a> {
     /// rather than `~a~`, which kramdown leaves as text.
     strikethroughs: Vec<bool>,
     ids: HeaderIds,
+    definitions: Definitions<'a>,
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
 }
@@ -183,6 +186,17 @@ struct Slot<'a> {
     start: Option<Index>,
 }
 
+/// The attribute lists kramdown gives link definitions, for the links that
+/// use them: on the lines right after one, or before it, right before or
+/// alone between blocks.
+#[derive(Default)]
+struct Definitions<'a> {
+    /// The lists for each definition with any, by its label in lowercase.
+    lists: Vec<(String, Lists<'a>)>,
+    /// Where each line of lists for a definition starts, in order.
+    lines: Vec<usize>,
+}
+
 /// A paragraph that lists on lines of their own have ended, for the lines
 /// after them to start a new one.
 #[derive(Clone, Copy)]
@@ -219,12 +233,20 @@ impl<'a> Reader<'a> {
     /// Reads `text` with `options`.
     pub fn new(text: &'a str, options: Options) -> Self {
         let markdown = options.parser_options();
+        let events = Parser::new_ext(text, markdown).into_offset_iter();
+        let definitions = if options
+            .kramdown
+            .contains(Extensions::ENABLE_BLOCK_ATTRIBUTES)
+            && text.contains("{:")
+        {
+            Definitions::read(text, events.reference_definitions())
+        } else {
+            Definitions::default()
+        };
         Self {
             text,
             kramdown: options.kramdown,
-            events: Parser::new_ext(text, markdown)
-                .into_offset_iter()
-                .peekable(),
+            events: events.peekable(),
             lines: text.match_indices('\n').map(|(i, _)| i + 1).collect(),
             pending: Pending::default(),
             block: None,
@@ -233,6 +255,7 @@ impl<'a> Reader<'a> {
             split: None,
             strikethroughs: Vec::new(),
             ids: HeaderIds::default(),
+            definitions,
             ready: VecDeque::new(),
         }
     }
@@ -250,7 +273,11 @@ impl<'a> Reader<'a> {
                     self.settle(block);
                 }
                 let next = self.next.take();
+                let definition = self.definition_lists(&event);
                 let i = self.push(event, range);
+                if let Some(lists) = definition {
+                    self.pending.attach(i, lists);
+                }
                 if let Some(lists) = next {
                     self.pending.attach(i, lists);
                 }
@@ -283,6 +310,31 @@ impl<'a> Reader<'a> {
                 self.push(event, range);
             }
         }
+    }
+
+    /// The lists for the link definition `event` uses, if it's the start of
+    /// a link or image by reference to one with any.
+    fn definition_lists(&self, event: &Event<'a>) -> Option<Lists<'a>> {
+        if self.definitions.lists.is_empty() {
+            return None;
+        }
+        let Event::Start(Tag::Link { link_type, id, .. } | Tag::Image { link_type, id, .. }) =
+            event
+        else {
+            return None;
+        };
+        if !matches!(
+            link_type,
+            LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+        ) {
+            return None;
+        }
+        let label = id.to_lowercase();
+        self.definitions
+            .lists
+            .iter()
+            .find(|(other, _)| *other == label)
+            .map(|(_, lists)| lists.clone())
     }
 
     /// Whether a definition list starting at `start` goes on with the one
@@ -495,8 +547,16 @@ impl<'a> Reader<'a> {
     /// they're for: the paragraph they start, the paragraph they end,
     /// splitting off the lines after them, the definition list whose first
     /// term's line they come before, or for a lazy line, the outermost
-    /// list, quote or definition list they're in.
+    /// list, quote or definition list they're in. Those for a link
+    /// definition are already its links'.
     fn line(&mut self, lists: Lists<'a>, lazy: bool, start: usize) {
+        if self.definitions.lines.binary_search(&start).is_ok() {
+            if matches!(self.pending.last(), Some(item) if matches!(item.event, Event::Start(Tag::Paragraph)))
+            {
+                self.skip_soft_break();
+            }
+            return;
+        }
         if let Some(split) = self.split {
             // Lists on the lines after a paragraph's lists are for it too.
             self.pending.attach(split.paragraph, lists);
@@ -851,6 +911,89 @@ impl<'a> Pending<'a> {
     fn in_code_block(&self) -> bool {
         self.innermost()
             .is_some_and(|i| matches!(self.item(i).event, Event::Start(Tag::CodeBlock(_))))
+    }
+}
+
+impl<'a> Definitions<'a> {
+    /// The lists for the link `definitions` read from `text`.
+    fn read(text: &'a str, definitions: &RefDefs<'_>) -> Self {
+        let mut spans: Vec<_> = definitions
+            .iter()
+            .map(|(label, definition)| (label, definition.span.clone()))
+            .collect();
+        spans.sort_by_key(|(_, span)| span.start);
+        let mut found = Self::default();
+        // Where the lines given to a definition so far end.
+        let mut taken = 0;
+        for (label, span) in spans {
+            let lines = found.lines.len();
+            let mut lists = Lists::default();
+            for (start, before) in Self::before(text, span.start, taken) {
+                found.lines.push(start);
+                lists.extend(before);
+            }
+            let mut line = Self::line_end(text, span.end.saturating_sub(1));
+            while let Some((start, after, end)) = Self::lists_on(text, line) {
+                found.lines.push(start);
+                lists.extend(after);
+                line = end;
+            }
+            taken = taken.max(line);
+            if found.lines.len() > lines {
+                found.lists.push((label.to_lowercase(), lists));
+            }
+        }
+        found
+    }
+
+    /// The lists before the definition at `start`, on the lines right
+    /// before it, or alone between blocks before it, from the first, each
+    /// with where it starts. Lines before `taken` are another's.
+    fn before(text: &'a str, start: usize, taken: usize) -> Vec<(usize, Lists<'a>)> {
+        let mut lists = Vec::new();
+        let mut above = Self::line_before(text, Self::line_start(text, start));
+        while let Some(line) = above
+            && text[line..Self::line_end(text, line)].trim().is_empty()
+        {
+            above = Self::line_before(text, line);
+        }
+        while let Some(line) = above
+            && line >= taken
+            && let Some((start, found, _)) = Self::lists_on(text, line)
+        {
+            lists.push((start, found));
+            above = Self::line_before(text, line);
+        }
+        // Right after another block, they're for it.
+        if above.is_some_and(|line| !text[line..Self::line_end(text, line)].trim().is_empty()) {
+            return Vec::new();
+        }
+        lists.reverse();
+        lists
+    }
+
+    /// The lists alone on the line starting at `line`, if any, with where
+    /// they start and where the next line starts.
+    fn lists_on(text: &'a str, line: usize) -> Option<(usize, Lists<'a>, usize)> {
+        let end = Self::line_end(text, line);
+        let content = text.get(line..end)?;
+        let trimmed = content.trim();
+        let indent = content.len() - content.trim_start().len();
+        let (lists, len) = Lists::parse(trimmed).filter(|_| indent < 4)?;
+        (len == trimmed.len()).then_some((line + indent, lists, end))
+    }
+
+    fn line_start(text: &str, at: usize) -> usize {
+        text[..at].rfind('\n').map_or(0, |i| i + 1)
+    }
+
+    /// Where the line after the one `at` is on starts, or the text ends.
+    fn line_end(text: &str, at: usize) -> usize {
+        text[at..].find('\n').map_or(text.len(), |i| at + i + 1)
+    }
+
+    fn line_before(text: &str, line: usize) -> Option<usize> {
+        (line > 0).then(|| Self::line_start(text, line - 1))
     }
 }
 

@@ -135,6 +135,8 @@
 //!
 //! - [x] Block attribute lists, on the line after a block or the line
 //!   before it, or alone between blocks for the one after.
+//! - [x] Block attribute lists on link definitions, for the links and
+//!   images that use them.
 //! - [ ] A block attribute list after a list item ending the list. It goes
 //!   to the list, but the items after it stay in the same list.
 //! - [x] Span attribute lists, right after emphasis, a link, an image or a
