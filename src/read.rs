@@ -9,6 +9,7 @@ use pulldown_cmark::{
     CodeBlockKind, CowStr, Event, LinkType, OffsetIter, Parser, RefDefs, Tag, TagEnd,
 };
 
+use crate::abbreviations::{Abbreviation, Abbreviations};
 use crate::attributes::Lists;
 use crate::definitions::DefinitionLists;
 use crate::headings::HeaderIds;
@@ -185,6 +186,7 @@ pub(crate) struct Reader<'a> {
     /// The stand-ins in the text, and the index of the next not yet read.
     marks: &'a [Mark<'a>],
     next_mark: usize,
+    abbreviations: Abbreviations<'a, 'a>,
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
 }
@@ -299,7 +301,16 @@ impl<'a> Reader<'a> {
             definitions,
             marks,
             next_mark: 0,
+            abbreviations: Abbreviations::new(&[]),
             ready: VecDeque::new(),
+        }
+    }
+
+    /// Makes each use of one of `abbreviations` in the text an `<abbr>`.
+    pub fn abbreviating(self, abbreviations: &'a [Abbreviation<'a>]) -> Self {
+        Self {
+            abbreviations: Abbreviations::new(abbreviations),
+            ..self
         }
     }
 
@@ -948,6 +959,7 @@ impl<'a> Reader<'a> {
         {
             ListItems::new(self.text).rewrite(&mut items);
         }
+        self.abbreviations.replace(&mut items);
         if self.kramdown.contains(Extensions::ENABLE_TASK_LISTS) {
             Item::mark_task_lists(&mut items);
         }

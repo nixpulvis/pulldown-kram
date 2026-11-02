@@ -130,7 +130,8 @@
 //!   It nests.
 //! - [x] Code spans.
 //! - [x] Footnotes, with blocks in their definitions.
-//! - [ ] Abbreviations, `*[HTML]: …`. The definition is read as text.
+//! - [x] Abbreviations, `*[HTML]: …`, each use given out as an `<abbr>`, in
+//!   HTML events, with attribute lists on the lines around the definition.
 //! - [x] Dashes, ellipses and smart quotes.
 //! - [ ] Guillemets from `<<` and `>>`. Read as text, or as an HTML tag.
 //! - [x] Inline math, `$$…$$` in a paragraph with more in it, while `$…$`
@@ -174,6 +175,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations)]
 
+mod abbreviations;
 mod attributes;
 mod definitions;
 mod headings;
@@ -189,12 +191,13 @@ use std::fmt;
 use std::iter::FusedIterator;
 use std::ops::Range;
 
+use abbreviations::Abbreviation;
 pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
 use source::{
-    AttributeLines, DefinitionLines, HtmlBlocks, Mark, MarkdownElements, Offsets, SpanTags,
+    AttributeLines, DefinitionLines, HtmlBlocks, Mark, MarkdownElements, Marked, Offsets, SpanTags,
     StandIns,
 };
 
@@ -206,6 +209,7 @@ pub struct Document<'a> {
     offsets: Offsets,
     /// The stand-ins in the text, for what CommonMark has no way to read.
     marks: Vec<Mark<'a>>,
+    abbreviations: Vec<Abbreviation<'a>>,
     options: Options,
 }
 
@@ -217,7 +221,12 @@ impl<'a> Document<'a> {
         let reads = |extension| options.kramdown.contains(extension);
         // Rewrite what CommonMark reads differently, before it's read: first
         // the stand-ins, for what they stand for to be in the markdown.
-        let (mut text, mut offsets, mut marks) = StandIns::mark(markdown, options.kramdown);
+        let Marked {
+            mut text,
+            mut offsets,
+            mut marks,
+            abbreviations,
+        } = StandIns::mark(markdown, options.kramdown);
         // Moves the marks past `edits`, and adds them to the offsets.
         let mut then = |offsets: &mut Offsets, edits: Offsets| {
             for mark in &mut marks {
@@ -259,6 +268,7 @@ impl<'a> Document<'a> {
             text,
             offsets,
             marks,
+            abbreviations,
             options,
         }
     }
@@ -269,7 +279,8 @@ impl<'a> Document<'a> {
     /// lists after a block are for it. With tables of contents, they're all
     /// read first, for the tables to link to the headings after them.
     pub fn events(&self) -> Events<'_> {
-        let reader = read::Reader::new(&self.text, self.options, &self.marks);
+        let reader = read::Reader::new(&self.text, self.options, &self.marks)
+            .abbreviating(&self.abbreviations);
         let items = if self
             .options
             .kramdown

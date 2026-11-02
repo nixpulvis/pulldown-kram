@@ -175,6 +175,9 @@ bitflags! {
         /// starting another cell. Tables are read by pulldown-cmark, so
         /// this needs `ENABLE_TABLES`.
         const ENABLE_TABLES_WITHOUT_HEADERS = 1 << 24;
+        /// Abbreviations, `*[HTML]: HyperText Markup Language`, making each
+        /// use of one in the text an `<abbr>` with its title.
+        const ENABLE_ABBREVIATIONS = 1 << 25;
     }
 }
 

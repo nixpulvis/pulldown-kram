@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::Extensions;
+use crate::abbreviations::Abbreviation;
 use crate::attributes::Lists;
 
 /// Maps offsets in rewritten text back to the text it was rewritten from.
@@ -856,6 +857,16 @@ pub(crate) struct StandIns<'a> {
     tables: bool,
     /// Whether `$$` math is read, a `|` in which is no cell's end.
     math: bool,
+    /// The abbreviations defined, if they're read.
+    abbreviations: Option<Vec<Abbreviation<'a>>>,
+}
+
+/// Markdown with stand-ins in it, by [`StandIns`].
+pub(crate) struct Marked<'a> {
+    pub text: Cow<'a, str>,
+    pub offsets: Offsets,
+    pub marks: Vec<Mark<'a>>,
+    pub abbreviations: Vec<Abbreviation<'a>>,
 }
 
 /// Reading the lines of kramdown's tables.
@@ -1002,14 +1013,11 @@ impl<'a> StandIns<'a> {
     /// What stands in for a span.
     pub const SPAN: &'static str = "<kd:x>";
 
-    /// `markdown`, with a stand-in in place of each end-of-block marker and
-    /// `comment` and `nomarkdown` the `extensions` read, and a header row
-    /// put in each table without one, the offsets of the edits, and the
-    /// stand-ins, in order.
-    pub fn mark(
-        markdown: &'a str,
-        extensions: Extensions,
-    ) -> (Cow<'a, str>, Offsets, Vec<Mark<'a>>) {
+    /// `markdown`, with a stand-in in place of each end-of-block marker,
+    /// `comment`, `nomarkdown` and abbreviation definition the `extensions`
+    /// read, and a header row put in each table without one, with the
+    /// offsets of the edits, the stand-ins, in order, and the abbreviations.
+    pub fn mark(markdown: &'a str, extensions: Extensions) -> Marked<'a> {
         let reads = |extension| extensions.contains(extension);
         let markers = reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS) && markdown.contains('^');
         let tags = (reads(Extensions::ENABLE_COMMENT_EXTENSION)
@@ -1018,8 +1026,14 @@ impl<'a> StandIns<'a> {
         let tables = reads(Extensions::ENABLE_TABLES_WITHOUT_HEADERS)
             && reads(Extensions::ENABLE_TABLES)
             && markdown.contains('|');
-        if !markers && !tags && !tables {
-            return (Cow::Borrowed(markdown), Offsets::default(), Vec::new());
+        let abbreviations = reads(Extensions::ENABLE_ABBREVIATIONS) && markdown.contains("*[");
+        if !markers && !tags && !tables && !abbreviations {
+            return Marked {
+                text: Cow::Borrowed(markdown),
+                offsets: Offsets::default(),
+                marks: Vec::new(),
+                abbreviations: Vec::new(),
+            };
         }
         let mut stand_ins = Self {
             markdown,
@@ -1028,6 +1042,7 @@ impl<'a> StandIns<'a> {
                 ..Rewrite::default()
             },
             marks: Vec::new(),
+            abbreviations: abbreviations.then(Vec::new),
             end_of_blocks: reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS),
             comments: reads(Extensions::ENABLE_COMMENT_EXTENSION),
             nomarkdown: reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION),
@@ -1036,7 +1051,44 @@ impl<'a> StandIns<'a> {
         };
         stand_ins.lines();
         let (text, offsets) = stand_ins.out.finish(markdown);
-        (text, offsets, stand_ins.marks)
+        Marked {
+            text,
+            offsets,
+            marks: stand_ins.marks,
+            abbreviations: stand_ins.abbreviations.unwrap_or_default(),
+        }
+    }
+
+    /// Puts a stand-in in place of the abbreviation definition starting at
+    /// the line at `start`, with the lines of only attribute lists right
+    /// before and after it, which are for it, returning the index of its
+    /// last line, after keeping all but that line's end.
+    fn abbreviation(&mut self, lines: &[&'a str], start: usize) -> Option<usize> {
+        self.abbreviations.as_ref()?;
+        let only_lists = |line: &'a str| {
+            let trimmed = line.trim();
+            Lists::parse(trimmed)
+                .filter(|(_, len)| *len == trimmed.len())
+                .map(|(lists, _)| lists)
+        };
+        let mut lists = Lists::default();
+        let mut end = start;
+        while let Some(before) = lines.get(end).copied().and_then(only_lists) {
+            lists.extend(before);
+            end += 1;
+        }
+        let mut abbreviation = Abbreviation::defined(lines.get(end)?)?;
+        while let Some(after) = lines.get(end + 1).copied().and_then(only_lists) {
+            lists.extend(after);
+            end += 1;
+        }
+        abbreviation.lists = lists;
+        self.abbreviations.as_mut()?.push(abbreviation);
+        let line = lines[start];
+        let lead = line.len() - line.trim_start().len();
+        let len = self.offset(lines[end]) + lines[end].trim_end().len() - self.offset(line) - lead;
+        self.stand_in(&line[..lead], len, true, StandIn::Nothing);
+        Some(end)
     }
 
     fn lines(&mut self) {
@@ -1077,6 +1129,16 @@ impl<'a> StandIns<'a> {
             let content = line[lead..].trim_end();
             boundary = content.starts_with('#')
                 || Lists::parse(content).is_some_and(|(_, len)| len == content.len());
+            if starts_block
+                && !line[..lead].contains('>')
+                && let Some(end) = self.abbreviation(&lines, i - 1)
+            {
+                let last = lines[end];
+                self.out.keep(&last[last.trim_end().len()..]);
+                i = end + 1;
+                boundary = true;
+                continue;
+            }
             if self.end_of_blocks && content == "^" {
                 self.stand_in(&line[..lead], content.len(), true, StandIn::Nothing);
                 self.out.keep(&line[lead + content.len()..]);
@@ -1645,7 +1707,12 @@ mod tests {
     #[test]
     fn stand_ins_mark_only_lines_of_an_end_of_block_marker() {
         let src = "a\n^\n> b\n>  ^ \n";
-        let (text, offsets, marks) = StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
+        let Marked {
+            text,
+            offsets,
+            marks,
+            ..
+        } = StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
         assert_eq!(text, "a\n<!---->\n> b\n>  <!----> \n");
         let at: Vec<_> = marks.iter().map(|mark| (mark.at, mark.block)).collect();
         assert_eq!(at, [(2, true), (17, true)]);
@@ -1653,7 +1720,8 @@ mod tests {
         assert_ranges_fit(src, &text, &offsets);
         // Not with more on the line, as code, in a fence, or in HTML.
         let src = "^ a\n\n    ^\n\n```\n^\n```\n\n<div>\n^\n</div>\n";
-        let (text, _, marks) = StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
+        let Marked { text, marks, .. } =
+            StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(marks.is_empty());
     }
@@ -1662,7 +1730,12 @@ mod tests {
     fn stand_ins_mark_heads_tables_without_one() {
         let tables = Extensions::ENABLE_TABLES | Extensions::ENABLE_TABLES_WITHOUT_HEADERS;
         let src = "| a | `b|c`\n| d |\n\n| e | f |\n|-+-:\n| g |\n";
-        let (text, offsets, marks) = StandIns::mark(src, tables);
+        let Marked {
+            text,
+            offsets,
+            marks,
+            ..
+        } = StandIns::mark(src, tables);
         assert_eq!(
             text,
             "| | |\n|-|-|\n| a | `b\\|c`\n| d |\n\n| e | f |\n|-|-:|\n| g |\n"
@@ -1675,7 +1748,7 @@ mod tests {
         // or math, or escaped.
         let src =
             "a\n| b |\n\n| c |\nd\n\n|-|\n\n| e |\n| f |\n|-|\n\n`g|h`\n\n$$i|j$$\n\nk \\| l\n";
-        let (text, _, marks) = StandIns::mark(src, tables | Extensions::ENABLE_MATH);
+        let Marked { text, marks, .. } = StandIns::mark(src, tables | Extensions::ENABLE_MATH);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(marks.is_empty());
     }
@@ -1684,7 +1757,12 @@ mod tests {
     fn stand_ins_mark_extensions_closed_and_escape_the_rest() {
         let src = "{::comment}\na {:/} b\n\n{:/comment}\n{::nomarkdown type=\"latex\"}\nc\n{:/}\n\
             d {::comment}e{:/} `{::comment}f{:/}` {::nomarkdown/} {:/} {::comment} {:/other}\n";
-        let (text, offsets, marks) = StandIns::mark(
+        let Marked {
+            text,
+            offsets,
+            marks,
+            ..
+        } = StandIns::mark(
             src,
             Extensions::ENABLE_COMMENT_EXTENSION | Extensions::ENABLE_NOMARKDOWN_EXTENSION,
         );
@@ -1705,7 +1783,7 @@ mod tests {
         assert_eq!(was(src, &text, &offsets, "<kd:x> `"), "{::comment}e{:/} `");
         assert_ranges_fit(src, &text, &offsets);
         // Only the extensions read: here, the two `nomarkdown`.
-        let (_, _, marks) = StandIns::mark(src, Extensions::ENABLE_NOMARKDOWN_EXTENSION);
+        let marks = StandIns::mark(src, Extensions::ENABLE_NOMARKDOWN_EXTENSION).marks;
         assert_eq!(marks.len(), 2);
     }
 

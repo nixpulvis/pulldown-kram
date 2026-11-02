@@ -569,6 +569,18 @@ fn tables_without_headers() {
 }
 
 #[test]
+fn abbreviations() {
+    let extension = Extension::new(Extensions::ENABLE_ABBREVIATIONS);
+    // Each use as a word, with the attributes from lists on the lines
+    // around the definition.
+    extension.reads(
+        "*[HTML]: Hyper Text\n{:.x}\n\nHTML and XHTML or (HTML).\n",
+        "<p><abbr class=\"x\" title=\"Hyper Text\">HTML</abbr> and XHTML or (<abbr class=\"x\" title=\"Hyper Text\">HTML</abbr>).</p>\n",
+        "<p class=\"x\">*[HTML]: Hyper Text</p>\n<p>HTML and XHTML or (HTML).</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

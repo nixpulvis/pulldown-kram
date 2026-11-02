@@ -71,3 +71,6 @@ The first release.
   fewer cells than the header, or `+` between them, now makes a table.
 - `html` writes an empty table cell with a no-break space, as kramdown
   does.
+- `Extensions::ENABLE_ABBREVIATIONS` reads kramdown's abbreviations,
+  `*[HTML]: HyperText Markup Language`, giving each use of one in the text
+  out as an `<abbr>` with its title, in HTML events.

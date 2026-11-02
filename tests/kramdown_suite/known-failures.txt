@@ -55,11 +55,8 @@ span/05_html/invalid # unclosed HTML span kept open
 span/05_html/markdown_attr # markdown="block", "span" and "0"; markdown attribute left in the HTML
 span/05_html/normal # processing instructions; invalid and block tags in a paragraph
 span/05_html/xml # XML-namespaced tags not read as HTML
-span/abbreviations/abbrev # abbreviations
-span/abbreviations/abbrev_defs # abbreviations
-span/abbreviations/abbrev_in_html # abbreviations; markdown attribute left in the HTML
-span/abbreviations/in_footnote # abbreviations
-span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks; abbreviations
+span/abbreviations/abbrev_in_html # markdown="span" left in the HTML, its text not read
+span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks
 span/extension/options # options extension
 span/math/normal # \$ escapes before $$ math kept or read differently
 span/text_substitutions/entities # \& escape kept
