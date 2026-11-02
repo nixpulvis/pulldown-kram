@@ -26,3 +26,4 @@ The first release.
 - Math is without the whitespace inside its `$$`, as in kramdown.
 - `html` writes a fence's language without the highlighter options after
   a `?`, so `php?start_inline=1` is the class `language-php`.
+- A header id with a `_` before punctuation, like `{#a_:b}`, is read.

@@ -8,8 +8,8 @@ block/02_eob/middle # end-of-block marker ^ read as text
 block/03_paragraph/line_break_last_line # hard line break from two backslashes
 block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
 block/03_paragraph/with_html_to_native # text after a block tag's end on its line stays in the HTML block, not a paragraph
-block/04_header/atx_header # end-of-block marker; headers interrupting paragraphs; empty atx headers; header id {#A-Za-z0-9_:t}
-block/04_header/setext_header # setext underline after indented code and lists; header id {#A-Za-z0-9_:}
+block/04_header/atx_header # end-of-block marker; headers interrupting paragraphs; empty atx headers
+block/04_header/setext_header # setext underline after indented code and lists
 block/05_blockquote/lazy # end-of-block marker ^ read as text
 block/06_codeblock/disable-highlighting # end-of-block marker ends the code block in kramdown
 block/06_codeblock/error # ~~~~~~ without a closing fence starts a code block

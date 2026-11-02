@@ -1,5 +1,6 @@
 //! Heading ids, written after a heading's text or made from it.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -87,15 +88,25 @@ impl<'h, 'a> Heading<'h, 'a> {
 
     /// Takes a `{#id}` off the end of the heading's text, read from `text`,
     /// along with closing `#`s before it in an atx heading, returning the id.
+    /// The text may be in more than one event, as pulldown-cmark ends one
+    /// at each `_` or `*` that could have been emphasis.
     fn take_explicit_id(&mut self, text: &'a str) -> Option<CowStr<'a>> {
         let atx = text[self.start.range.start..].starts_with('#');
         let last = self
             .content
-            .iter_mut()
-            .rev()
-            .find(|item| matches!(item.event, Event::Text(_)))?;
-        let Event::Text(words) = &last.event else {
-            return None;
+            .iter()
+            .rposition(|item| matches!(item.event, Event::Text(_)))?;
+        let mut first = last;
+        while first > 0
+            && matches!(self.content[first - 1].event, Event::Text(_))
+            && self.content[first - 1].range.end == self.content[first].range.start
+        {
+            first -= 1;
+        }
+        let run = &self.content[first..=last];
+        let words: Cow<'_, str> = match run {
+            [only] => Cow::Borrowed(Self::text_of(only)),
+            _ => Cow::Owned(run.iter().map(Self::text_of).collect()),
         };
         let body = words.trim_end().strip_suffix('}')?;
         let open = body.rfind("{#")?;
@@ -116,17 +127,32 @@ impl<'h, 'a> Heading<'h, 'a> {
         {
             kept = unhashed.trim_end();
         }
-        let id = open + 2..body.len();
-        let source = text.get(last.range.clone()).filter(|s| *s == &**words);
-        let part = |part: Range<usize>| match source {
-            Some(_) => {
-                CowStr::Borrowed(&text[last.range.start + part.start..last.range.start + part.end])
+        let start = run[0].range.start;
+        let source = text
+            .get(start..run[run.len() - 1].range.end)
+            .is_some_and(|source| source == words);
+        let part = |part: Range<usize>| {
+            if source {
+                CowStr::Borrowed(&text[start + part.start..start + part.end])
+            } else {
+                CowStr::from(words[part].to_owned())
             }
-            None => CowStr::from(words[part].to_owned()),
         };
-        let id = part(id);
-        last.event = Event::Text(part(0..kept.len()));
+        let id = part(open + 2..body.len());
+        let kept = part(0..kept.len());
+        self.content[first].event = Event::Text(kept);
+        for item in &mut self.content[first + 1..=last] {
+            item.event = Event::Text(CowStr::Borrowed(""));
+        }
         Some(id)
+    }
+
+    /// The text of `item`, a text event.
+    fn text_of<'i>(item: &'i Item<'a>) -> &'i str {
+        match &item.event {
+            Event::Text(text) => text,
+            _ => unreachable!("a text event"),
+        }
     }
 
     /// The text kramdown makes the heading's id from: its text, code and
@@ -188,7 +214,7 @@ mod tests {
 
     #[test]
     fn header_ids_assign_explicit_ids_need_a_space_and_a_name() {
-        let text = "# A {#b}\n# C{#d}\n# E {#1f}\n# G {#h i}\n# J {#k} *l*\n";
+        let text = "# A {#b}\n# C{#d}\n# E {#1f}\n# G {#h i}\n# J {#k} *l*\n# M {#n_:o}\n";
         assert_eq!(
             headings(&assign(text, |_| {})),
             pairs(&[
@@ -197,6 +223,7 @@ mod tests {
                 ("e-1f", "E {#1f}"),
                 ("g-h-i", "G {#h i}"),
                 ("j-k-l", "J {#k} l"),
+                ("n_:o", "M"),
             ])
         );
     }
