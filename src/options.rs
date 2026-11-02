@@ -32,7 +32,7 @@ use bitflags::bitflags;
 /// let more = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
 /// let document = Document::new("> [!NOTE]\n> a\n", more);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Options {
     /// The kramdown extensions to read.
     pub kramdown: Extensions,
@@ -67,11 +67,28 @@ impl From<Extensions> for Options {
     }
 }
 
+impl Default for Options {
+    /// What kramdown reads: every extension, and nothing more from
+    /// pulldown-cmark.
+    fn default() -> Self {
+        Self::from(Extensions::all())
+    }
+}
+
 bitflags! {
     /// kramdown's syntax beyond CommonMark, each part of which can be left
     /// off. The first few are read by pulldown-cmark, with the option of
     /// the same name, and the rest here. All of them read what kramdown
     /// reads.
+    ///
+    /// ```
+    /// use pulldown_kram::{Document, Extensions};
+    ///
+    /// // Everything but tables of contents, to stream the events.
+    /// let extensions = Extensions::all() - Extensions::ENABLE_TABLES_OF_CONTENTS;
+    /// let document = Document::new("* x\n{:toc}\n", extensions);
+    /// assert_eq!(document.events().count(), 5);
+    /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Extensions: u32 {
         /// Tables, with a header row.

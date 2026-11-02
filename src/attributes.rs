@@ -14,7 +14,7 @@ use pulldown_cmark::CowStr;
 ///
 /// assert_eq!(attributes.id.as_deref(), Some("intro"));
 /// assert!(attributes.has_class("note"));
-/// assert_eq!(attributes.pairs, [("lang", "en".into())]);
+/// assert_eq!(attributes.pairs, [("lang".into(), "en".into())]);
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attributes<'a> {
@@ -24,7 +24,7 @@ pub struct Attributes<'a> {
     /// kramdown, `class="…"` replaces the classes before it in its list.
     pub classes: Vec<CowStr<'a>>,
     /// Every other attribute, like `hreflang="de"`, in the order given.
-    pub pairs: Vec<(&'a str, CowStr<'a>)>,
+    pub pairs: Vec<(CowStr<'a>, CowStr<'a>)>,
 }
 
 impl<'a> Attributes<'a> {
@@ -38,6 +38,32 @@ impl<'a> Attributes<'a> {
         self.classes.iter().any(|c| c.as_ref() == class)
     }
 
+    /// These attributes, owning what they borrowed from the document, to
+    /// keep after it's gone.
+    ///
+    /// ```
+    /// use pulldown_kram::{Attributes, Document, Extensions};
+    ///
+    /// let attributes: Attributes<'static> = {
+    ///     let markdown = String::from("a\n{:.x}\n");
+    ///     let document = Document::new(&markdown, Extensions::all());
+    ///     let (_, attributes) = document.events().next().unwrap();
+    ///     attributes.into_static()
+    /// };
+    /// assert!(attributes.has_class("x"));
+    /// ```
+    pub fn into_static(self) -> Attributes<'static> {
+        Attributes {
+            id: self.id.map(CowStr::into_static),
+            classes: self.classes.into_iter().map(CowStr::into_static).collect(),
+            pairs: self
+                .pairs
+                .into_iter()
+                .map(|(key, value)| (key.into_static(), value.into_static()))
+                .collect(),
+        }
+    }
+
     /// Adds `other`'s attributes, which win over any of the same name.
     pub(crate) fn extend(&mut self, other: Self) {
         if other.id.is_some() {
@@ -49,8 +75,8 @@ impl<'a> Attributes<'a> {
         }
     }
 
-    fn set(&mut self, key: &'a str, value: CowStr<'a>) {
-        match key {
+    fn set(&mut self, key: CowStr<'a>, value: CowStr<'a>) {
+        match key.as_ref() {
             "id" => self.id = Some(value),
             "class" => self.classes = Self::split_classes(value),
             _ => match self.pairs.iter_mut().find(|(k, _)| *k == key) {
@@ -108,7 +134,7 @@ impl<'a> Lists<'a> {
         }
         for part in list.parts() {
             match part {
-                Part::Pair(key, value) => self.attributes.set(key, value),
+                Part::Pair(key, value) => self.attributes.set(CowStr::Borrowed(key), value),
                 Part::Word(word) if word.starts_with(['#', '.']) => self.ids_and_classes(word),
                 Part::Word("toc") => self.toc = true,
                 Part::Word(_) => {}
@@ -119,36 +145,39 @@ impl<'a> Lists<'a> {
     /// Reads a word like `#intro.new.wide`, or nothing if any part of it
     /// isn't an id or class.
     fn ids_and_classes(&mut self, word: &'a str) {
-        let mut parts = Vec::new();
-        let mut rest = word;
-        while let Some(marker) = rest.chars().next() {
-            let name = &rest[1..];
-            let len = match marker {
-                '#' => {
-                    let len = name
-                        .find(|c: char| !(List::is_word(c) || matches!(c, ':' | '-')))
-                        .unwrap_or(name.len());
-                    if !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
-                        return;
-                    }
-                    len
-                }
-                '.' => name.find(['.', '#']).unwrap_or(name.len()),
-                _ => return,
-            };
-            if len == 0 {
-                return;
-            }
-            parts.push((marker, &name[..len]));
-            rest = &name[len..];
+        if Self::ids_and_classes_in(word).any(|part| part.is_none()) {
+            return;
         }
-        for (marker, name) in parts {
+        for (marker, name) in Self::ids_and_classes_in(word).flatten() {
             if marker == '#' {
                 self.attributes.id = Some(CowStr::Borrowed(name));
             } else {
                 self.attributes.classes.push(CowStr::Borrowed(name));
             }
         }
+    }
+
+    /// The parts of a word like `#intro.new`, each its marker and name, or
+    /// `None` for one that isn't an id or class, which ends the word.
+    fn ids_and_classes_in(word: &'a str) -> impl Iterator<Item = Option<(char, &'a str)>> {
+        let mut rest = word;
+        std::iter::from_fn(move || {
+            let marker = rest.chars().next()?;
+            let name = &rest[marker.len_utf8()..];
+            let len = match marker {
+                '#' if name.starts_with(|c: char| c.is_ascii_alphabetic()) => name
+                    .find(|c: char| !(List::is_word(c) || matches!(c, ':' | '-')))
+                    .unwrap_or(name.len()),
+                '.' => name.find(['.', '#']).unwrap_or(name.len()),
+                _ => 0,
+            };
+            if len == 0 {
+                rest = "";
+                return Some(None);
+            }
+            rest = &name[len..];
+            Some(Some((marker, &name[..len])))
+        })
     }
 }
 
@@ -275,7 +304,10 @@ mod tests {
         assert_eq!(attributes.id.as_deref(), Some("id"));
         assert_eq!(
             attributes.pairs,
-            [("k", CowStr::from("v \" }")), ("j", CowStr::from("w"))]
+            [
+                ("k".into(), CowStr::from("v \" }")),
+                ("j".into(), CowStr::from("w"))
+            ]
         );
         assert_eq!(&text[len..], " rest");
     }
@@ -288,7 +320,7 @@ mod tests {
             .attributes;
         assert_eq!(attributes.classes, ["b".into(), "c".into(), "d".into()]);
         assert_eq!(attributes.id.as_deref(), Some("y"));
-        assert_eq!(attributes.pairs, [("k", CowStr::from("2"))]);
+        assert_eq!(attributes.pairs, [("k".into(), CowStr::from("2"))]);
     }
 
     #[test]
@@ -334,7 +366,10 @@ mod tests {
             .attributes;
         assert_eq!(
             attributes.pairs,
-            [("k", CowStr::from(r"a\b\'}")), ("j", CowStr::from("'"))]
+            [
+                ("k".into(), CowStr::from(r"a\b\'}")),
+                ("j".into(), CowStr::from("'"))
+            ]
         );
     }
 
@@ -358,8 +393,19 @@ mod tests {
         );
         assert_eq!(
             lists.attributes.pairs,
-            [("k", CowStr::from("3")), ("j", CowStr::from("2"))]
+            [
+                ("k".into(), CowStr::from("3")),
+                ("j".into(), CowStr::from("2"))
+            ]
         );
         assert!(lists.toc);
+    }
+
+    #[test]
+    fn a_word_running_into_a_wide_character_is_skipped() {
+        // The id ends at `é`, which is neither an id nor a class.
+        let attributes = Lists::parse("{: #aé .b}").unwrap().0.attributes;
+        assert_eq!(attributes.id, None);
+        assert_eq!(attributes.classes, ["b".into()]);
     }
 }

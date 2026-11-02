@@ -74,14 +74,19 @@ impl MarkdownElements {
                 element.depth -= 1;
             }
             // One closed on the same line, like `<div>x</div>`, isn't open.
-            Some(tag)
-                if tag.name == element.name && !trimmed.contains(&format!("</{}", tag.name)) =>
-            {
+            Some(tag) if tag.name == element.name && !Self::closed_in(trimmed, tag.name) => {
                 element.depth += 1;
             }
             _ => {}
         }
         false
+    }
+
+    /// Whether `trimmed` has a closing tag named `name` in it.
+    fn closed_in(trimmed: &str, name: &str) -> bool {
+        trimmed
+            .match_indices("</")
+            .any(|(i, _)| trimmed[i + "</".len()..].starts_with(name))
     }
 }
 

@@ -152,7 +152,8 @@
 //! - [x] `{:toc}` tables of contents, nested by level, leaving out headings
 //!   with the class `no_toc`, and links inside headings.
 
-#![warn(missing_docs)]
+#![forbid(unsafe_code)]
+#![warn(missing_docs, missing_debug_implementations)]
 
 mod attributes;
 mod definitions;
@@ -164,6 +165,7 @@ mod toc;
 
 use std::borrow::Cow;
 use std::fmt;
+use std::iter::FusedIterator;
 
 pub use attributes::Attributes;
 pub use options::{Extensions, Options};
@@ -222,6 +224,18 @@ impl<'a> Document<'a> {
 }
 
 /// The events of a [`Document`], each with its attributes.
+///
+/// ```
+/// use pulldown_kram::{Document, Extensions, pulldown_cmark::Event};
+///
+/// let document = Document::new("*a*{:.x}\n", Extensions::all());
+/// let classes: Vec<_> = document
+///     .events()
+///     .filter(|(event, _)| matches!(event, Event::Start(_)))
+///     .map(|(_, attributes)| attributes.classes)
+///     .collect();
+/// assert_eq!(classes, [vec![], vec!["x".into()]]);
+/// ```
 pub struct Events<'a>(Items<'a>);
 
 /// Where the events come from.
@@ -251,9 +265,20 @@ impl<'a> Iterator for Events<'a> {
     }
 }
 
+impl FusedIterator for Events<'_> {}
+
 impl fmt::Debug for Events<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Events").finish_non_exhaustive()
+        let mut events = f.debug_struct("Events");
+        match &self.0 {
+            Items::Streamed(reader) => events
+                .field("streamed", &true)
+                .field("ready", &reader.size_hint().0),
+            Items::Read(items) => events
+                .field("streamed", &false)
+                .field("ready", &items.len()),
+        };
+        events.finish()
     }
 }
 
