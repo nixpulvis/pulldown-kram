@@ -13,7 +13,7 @@ use crate::attributes::Lists;
 use crate::definitions::DefinitionLists;
 use crate::headings::HeaderIds;
 use crate::lists::ListItems;
-use crate::source::MarkdownElements;
+use crate::source::{Mark, MarkdownElements, StandIn};
 use crate::{Extensions, Options};
 
 /// An event, where in the source it was read, and what kramdown's
@@ -146,8 +146,9 @@ pub(crate) struct Reader<'a> {
     strikethroughs: Vec<bool>,
     ids: HeaderIds,
     definitions: Definitions<'a>,
-    /// Where each end-of-block marker's stand-in starts, in order.
-    end_of_blocks: &'a [usize],
+    /// The stand-ins in the text, and the index of the next not yet read.
+    marks: &'a [Mark<'a>],
+    next_mark: usize,
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
 }
@@ -233,9 +234,9 @@ impl Target {
 }
 
 impl<'a> Reader<'a> {
-    /// Reads `text` with `options`, leaving out the HTML blocks standing in
-    /// for end-of-block markers at `end_of_blocks`.
-    pub fn new(text: &'a str, options: Options, end_of_blocks: &'a [usize]) -> Self {
+    /// Reads `text` with `options`, giving out what each of `marks` stands
+    /// for in place of the stand-in.
+    pub fn new(text: &'a str, options: Options, marks: &'a [Mark<'a>]) -> Self {
         let markdown = options.parser_options();
         let events = Parser::new_ext(text, markdown).into_offset_iter();
         let definitions = if options
@@ -260,7 +261,8 @@ impl<'a> Reader<'a> {
             strikethroughs: Vec::new(),
             ids: HeaderIds::default(),
             definitions,
-            end_of_blocks,
+            marks,
+            next_mark: 0,
             ready: VecDeque::new(),
         }
     }
@@ -268,12 +270,30 @@ impl<'a> Reader<'a> {
     fn event(&mut self, event: Event<'a>, range: Range<usize>) {
         let (event, range) = self.as_kramdown(event, range);
         match event {
-            Event::Start(Tag::HtmlBlock) if self.ends_blocks(&range) => {
-                for (event, _) in self.events.by_ref() {
-                    if matches!(event, Event::End(TagEnd::HtmlBlock)) {
-                        break;
+            Event::Start(Tag::HtmlBlock) if let Some(stand_in) = self.take_mark(&range, true) => {
+                self.skip_to(TagEnd::HtmlBlock);
+                let html = match stand_in {
+                    StandIn::Nothing => return,
+                    StandIn::Comment(text) => {
+                        CowStr::from(format!("<!-- {} -->\n", text.trim_end_matches('\n')))
                     }
-                }
+                    StandIn::Raw(text) => CowStr::Borrowed(text),
+                };
+                self.event(Event::Start(Tag::HtmlBlock), range.clone());
+                self.event(Event::Html(html), range.clone());
+                self.event(Event::End(TagEnd::HtmlBlock), range);
+            }
+            Event::Start(Tag::Link {
+                link_type: LinkType::Autolink,
+                ..
+            }) if let Some(stand_in) = self.take_mark(&range, false) => {
+                self.skip_to(TagEnd::Link);
+                let html = match stand_in {
+                    StandIn::Nothing => return,
+                    StandIn::Comment(text) => CowStr::from(format!("<!-- {text} -->")),
+                    StandIn::Raw(text) => CowStr::Borrowed(text),
+                };
+                self.event(Event::InlineHtml(html), range);
             }
             Event::Start(Tag::DefinitionList)
                 if self.continues(TagEnd::DefinitionList, range.start) =>
@@ -335,12 +355,39 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Whether an end-of-block marker's stand-in is in `range`.
-    fn ends_blocks(&self, range: &Range<usize>) -> bool {
-        let next = self.end_of_blocks.partition_point(|&at| at < range.start);
-        self.end_of_blocks
-            .get(next)
-            .is_some_and(|&at| at < range.end)
+    /// What the stand-in at the start of `range` stands for, if a block's
+    /// starts it, or a span's, `block` says, marking it read.
+    fn take_mark(&mut self, range: &Range<usize>, block: bool) -> Option<StandIn<'a>> {
+        let marks = self.marks;
+        while marks
+            .get(self.next_mark)
+            .is_some_and(|mark| mark.at < range.start)
+        {
+            self.next_mark += 1;
+        }
+        let mark = marks.get(self.next_mark)?;
+        let starts = if block {
+            mark.at < range.end
+                && self.text[range.start..mark.at]
+                    .trim_matches(|c: char| c.is_whitespace() || c == '>')
+                    .is_empty()
+        } else {
+            mark.at == range.start
+        };
+        if mark.block != block || !starts {
+            return None;
+        }
+        self.next_mark += 1;
+        Some(mark.stands_for)
+    }
+
+    /// Skips the events up to and including `end`.
+    fn skip_to(&mut self, end: TagEnd) {
+        for (event, _) in self.events.by_ref() {
+            if event == Event::End(end) {
+                break;
+            }
+        }
     }
 
     /// The lists for the link definition `event` uses, if it's the start of

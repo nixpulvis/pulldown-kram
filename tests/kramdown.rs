@@ -500,6 +500,29 @@ fn mixed_list_markers() {
 }
 
 #[test]
+fn comment_extension() {
+    let extension = Extension::new(Extensions::ENABLE_COMMENT_EXTENSION);
+    // A span or a block given out as an HTML comment, and one never closed
+    // left as text.
+    extension.reads(
+        "a {::comment}b{:/} c\n\n{::comment}\nd\n{:/comment}\n\n{::comment}\ne\n",
+        "<p>a <!-- b --> c</p>\n<!-- d -->\n<p>{::comment}\ne</p>\n",
+        "<p>a {::comment}b{:/} c</p>\n<p>d</p>\n<p>e</p>\n",
+    );
+}
+
+#[test]
+fn nomarkdown_extension() {
+    let extension = Extension::new(Extensions::ENABLE_NOMARKDOWN_EXTENSION);
+    // Given out as HTML as it is, unless its type is another converter's.
+    extension.reads(
+        "a {::nomarkdown}*b*{:/} c\n\n{::nomarkdown}\n<i>d</i>\n{:/}\n\n{::nomarkdown type=\"latex\"}\ne\n{:/}\n",
+        "<p>a *b* c</p>\n<i>d</i>\n",
+        "<p>a {::nomarkdown}<em>b</em>{:/} c</p>\n<p><i>d</i>\n{:/}</p>\n<p>e\n{:/}</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

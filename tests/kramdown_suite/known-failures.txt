@@ -12,7 +12,6 @@ block/06_codeblock/lazy # lazy lines wrapped onto an indented code block
 block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented code block
 block/07_horizontal_rule/error # long dash runs made into other dashes
 block/08_list/escaping # lists starting at any number interrupting a paragraph
-block/08_list/item_ial # nomarkdown extension
 block/08_list/lazy_and_nested # list nesting by indentation under an ordered item
 block/08_list/mixed # tab-indented nesting read as code
 block/08_list/other_first_element # code in an item with nothing on its first line indented by two, not four
@@ -33,8 +32,6 @@ block/09_html/simple # text after an HTML block's end tag stays in the block, no
 block/09_html/xml # XML-namespaced tags not read as HTML
 block/11_ial/nested # block attribute lists on HTML blocks
 block/11_ial/simple # attribute list definitions; block attribute list after a list item
-block/12_extension/comment # comment extension
-block/12_extension/nomarkdown # nomarkdown extension
 block/12_extension/options # options extension; markdown="1" span content
 block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition attribute lists
 block/13_definition_list/item_ial # definition attribute lists
@@ -69,8 +66,6 @@ span/abbreviations/abbrev_defs # abbreviations
 span/abbreviations/abbrev_in_html # abbreviations; markdown attribute left in the HTML
 span/abbreviations/in_footnote # abbreviations
 span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks; abbreviations
-span/extension/comment # comment extension
-span/extension/nomarkdown # nomarkdown extension
 span/extension/options # options extension
 span/line_breaks/normal # hard line break from two backslashes
 span/math/normal # \$ escapes before $$ math kept or read differently

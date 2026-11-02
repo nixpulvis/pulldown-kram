@@ -113,6 +113,12 @@ impl Offsets {
         }
     }
 
+    /// Where `at`, in the original and not inside a replaced text, is in
+    /// the rewritten text, after any text put in at it.
+    pub fn moved(&self, at: usize) -> usize {
+        self.to_rewritten(at, true)
+    }
+
     /// Records `edit`, made after the others, joined onto the last if they
     /// touch.
     fn push(&mut self, edit: Edit) {
@@ -607,61 +613,314 @@ impl DefinitionLines {
     }
 }
 
-/// kramdown's end-of-block marker, a line of only `^`, ends the blocks
-/// open at it, which CommonMark reads as text. An empty HTML comment there
-/// ends the same blocks, a paragraph, list, quote or code block, and this
-/// puts one in its place, for the reader to leave out.
-pub(crate) struct EndOfBlocks;
+/// What a stand-in, put in the text by [`StandIns`], stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StandIn<'a> {
+    /// Nothing: an end-of-block marker, or an extension giving nothing.
+    Nothing,
+    /// A `comment` extension's text.
+    Comment(&'a str),
+    /// A `nomarkdown` extension's text, given out as HTML.
+    Raw(&'a str),
+}
 
-impl EndOfBlocks {
-    /// What stands in for a marker.
-    pub const COMMENT: &str = "<!---->";
+/// A stand-in in the text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Mark<'a> {
+    /// Where it starts.
+    pub at: usize,
+    /// Whether it's a block's, rather than a span's.
+    pub block: bool,
+    pub stands_for: StandIn<'a>,
+}
 
-    /// `markdown`, with a comment in place of each marker, the offsets of
-    /// the edits, and where each comment starts.
-    pub fn mark(markdown: &str) -> (Cow<'_, str>, Offsets, Vec<usize>) {
-        let mut marks = Vec::new();
-        if !markdown.contains('^') {
-            return (Cow::Borrowed(markdown), Offsets::default(), marks);
+/// kramdown's end-of-block marker, a line of only `^`, and its `comment`
+/// and `nomarkdown` extensions, `{::comment}…{:/}`, are text to
+/// CommonMark. This puts a stand-in in place of each, for the reader to
+/// give out what it stands for instead: for a block, an empty HTML
+/// comment, which ends the same blocks a marker does, and for a span, an
+/// autolink, which can't start an HTML block. The extensions' tags that
+/// aren't read as one, like one never closed, are escaped, to stay text as
+/// in kramdown.
+pub(crate) struct StandIns<'a> {
+    markdown: &'a str,
+    out: Rewrite,
+    marks: Vec<Mark<'a>>,
+    end_of_blocks: bool,
+    comments: bool,
+    nomarkdown: bool,
+}
+
+/// An extension's start tag, like `{::comment}` or `{::nomarkdown/}`.
+struct StartTag<'a> {
+    name: &'a str,
+    /// How long it is.
+    len: usize,
+    /// Whether it closes itself, giving nothing.
+    closed: bool,
+    /// Whether it gives what it holds out as HTML, which a `nomarkdown`
+    /// does unless its `type` is for another converter.
+    html: bool,
+}
+
+impl<'a> StandIns<'a> {
+    /// What stands in for a block.
+    pub const BLOCK: &'static str = "<!---->";
+    /// What stands in for a span.
+    pub const SPAN: &'static str = "<kd:x>";
+
+    /// `markdown`, with a stand-in in place of each end-of-block marker,
+    /// `comment` and `nomarkdown` read, the offsets of the edits, and the
+    /// stand-ins, in order.
+    pub fn mark(
+        markdown: &'a str,
+        end_of_blocks: bool,
+        comments: bool,
+        nomarkdown: bool,
+    ) -> (Cow<'a, str>, Offsets, Vec<Mark<'a>>) {
+        let markers = end_of_blocks && markdown.contains('^');
+        let tags = (comments || nomarkdown) && markdown.contains("{:");
+        if !markers && !tags {
+            return (Cow::Borrowed(markdown), Offsets::default(), Vec::new());
         }
-        let mut out = Rewrite {
-            out: String::with_capacity(markdown.len() + 16),
-            ..Rewrite::default()
+        let mut stand_ins = Self {
+            markdown,
+            out: Rewrite {
+                out: String::with_capacity(markdown.len() + 16),
+                ..Rewrite::default()
+            },
+            marks: Vec::new(),
+            end_of_blocks,
+            comments,
+            nomarkdown,
         };
+        stand_ins.lines();
+        let (text, offsets) = stand_ins.out.finish(markdown);
+        (text, offsets, stand_ins.marks)
+    }
+
+    fn lines(&mut self) {
+        let lines: Vec<&'a str> = self.markdown.split_inclusive('\n').collect();
         let mut fence = Fence::default();
-        // Whether the lines are in an HTML block, where `^` is HTML.
+        // Whether the lines are in an HTML block, where nothing is kramdown.
         let mut html = false;
         let mut after_blank = true;
-        for line in markdown.split_inclusive('\n') {
+        let mut i = 0;
+        while i < lines.len() {
+            let line = lines[i];
+            i += 1;
             if fence.read(line) {
-                out.keep(line);
+                self.out.keep(line);
                 after_blank = false;
                 continue;
             }
-            let text = line.trim_end();
-            let lead = text.len() - text.trim_start_matches([' ', '>']).len();
-            let rest = &text[lead..];
-            if rest.is_empty() {
+            let trimmed = line.trim();
+            let lead = line.len() - line.trim_start_matches([' ', '>']).len();
+            if trimmed.is_empty() {
                 html = false;
                 after_blank = true;
-                out.keep(line);
+                self.out.keep(line);
                 continue;
             }
-            html |= after_blank && rest.starts_with('<');
+            html |= after_blank && line[lead..].starts_with('<');
             after_blank = false;
             // The spaces after the last quote marker.
-            let indent = lead - text[..lead].rfind('>').map_or(0, |i| i + 1);
-            if rest == "^" && indent < 4 && !html {
-                out.keep(&line[..lead]);
-                marks.push(out.out.len());
-                out.replace(1, Self::COMMENT);
-                out.keep(&line[lead + 1..]);
+            let indent = lead - line[..lead].rfind('>').map_or(0, |i| i + 1);
+            if html || indent >= 4 {
+                self.out.keep(line);
+                continue;
+            }
+            let content = line[lead..].trim_end();
+            if self.end_of_blocks && content == "^" {
+                self.stand_in(&line[..lead], content.len(), true, StandIn::Nothing);
+                self.out.keep(&line[lead + content.len()..]);
+                continue;
+            }
+            let quoted = line[..lead].contains('>');
+            if !quoted && let Some(end) = self.block(&lines, i - 1, lead) {
+                let last = lines[end];
+                let last_content = last.trim_end().len();
+                self.out.keep(&last[last_content..]);
+                i = end + 1;
+                continue;
+            }
+            if self.comments || self.nomarkdown {
+                self.spans(line);
             } else {
-                out.keep(line);
+                self.out.keep(line);
             }
         }
-        let (text, offsets) = out.finish(markdown);
-        (text, offsets, marks)
+    }
+
+    /// Puts a stand-in for `stands_for` in place of `len` bytes, after
+    /// keeping `before`.
+    fn stand_in(&mut self, before: &str, len: usize, block: bool, stands_for: StandIn<'a>) {
+        self.out.keep(before);
+        self.marks.push(Mark {
+            at: self.out.out.len(),
+            block,
+            stands_for,
+        });
+        let text = if block { Self::BLOCK } else { Self::SPAN };
+        self.out.replace(len, text);
+    }
+
+    /// Puts a stand-in in place of the block extension the line at `start`
+    /// starts, after its `lead`, if it's one closed on a line of its own,
+    /// returning the index of that line, after keeping all but its line
+    /// end.
+    fn block(&mut self, lines: &[&'a str], start: usize, lead: usize) -> Option<usize> {
+        let line = lines[start];
+        let content = line[lead..].trim_end();
+        let tag = self
+            .start_tag(content)
+            .filter(|tag| tag.len == content.len())?;
+        if tag.closed {
+            self.stand_in(&line[..lead], content.len(), true, StandIn::Nothing);
+            return Some(start);
+        }
+        let end = (start + 1..lines.len()).find(|&j| Self::closes(lines[j].trim(), tag.name))?;
+        let body = &self.markdown[self.offset(lines[start + 1])..self.offset(lines[end])];
+        let len = self.offset(lines[end]) + lines[end].trim_end().len() - self.offset(line) - lead;
+        let stands_for = Self::giving(&tag, body);
+        self.stand_in(&line[..lead], len, true, stands_for);
+        Some(end)
+    }
+
+    /// Where `line`, a part of the markdown, starts in it.
+    fn offset(&self, line: &str) -> usize {
+        line.as_ptr() as usize - self.markdown.as_ptr() as usize
+    }
+
+    /// Keeps `line`, putting a stand-in in place of each span extension in
+    /// it outside code, and escaping the tags left.
+    fn spans(&mut self, line: &'a str) {
+        let bytes = line.as_bytes();
+        let mut kept = 0;
+        let mut i = 0;
+        while i < line.len() {
+            match bytes[i] {
+                b'\\' => i += 2,
+                b'`' => {
+                    let run = line[i..].len() - line[i..].trim_start_matches('`').len();
+                    let closing = "`".repeat(run);
+                    i += run;
+                    // Past the code span, if it's closed on the line.
+                    let mut from = i;
+                    while let Some(at) = line[from..].find(&closing) {
+                        let at = from + at;
+                        let after = line[at..].len() - line[at..].trim_start_matches('`').len();
+                        if after == run {
+                            i = at + run;
+                            break;
+                        }
+                        from = at + after;
+                    }
+                }
+                b'{' => {
+                    let rest = &line[i..];
+                    if let Some(tag) = self.start_tag(rest) {
+                        let closing = if tag.closed {
+                            Some((tag.len, tag.len))
+                        } else {
+                            Self::find_end(&rest[tag.len..], tag.name)
+                                .map(|(at, len)| (tag.len + at, tag.len + at + len))
+                        };
+                        if let Some((body_end, end)) = closing {
+                            let stands_for = if tag.closed {
+                                StandIn::Nothing
+                            } else {
+                                Self::giving(&tag, &rest[tag.len..body_end])
+                            };
+                            self.stand_in(&line[kept..i], end, false, stands_for);
+                            i += end;
+                            kept = i;
+                            continue;
+                        }
+                    }
+                    if self.start_tag(rest).is_some() || self.end_tag(rest).is_some() {
+                        self.out.keep(&line[kept..i]);
+                        self.out.insert("\\");
+                        kept = i;
+                    }
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+        }
+        self.out.keep(&line[kept..]);
+    }
+
+    /// What an extension started with `tag`, holding `body`, gives.
+    fn giving(tag: &StartTag<'_>, body: &'a str) -> StandIn<'a> {
+        match tag.name {
+            "comment" => StandIn::Comment(body),
+            _ if tag.html => StandIn::Raw(body),
+            _ => StandIn::Nothing,
+        }
+    }
+
+    /// The start tag of an extension read, at the start of `text`.
+    fn start_tag<'t>(&self, text: &'t str) -> Option<StartTag<'t>> {
+        let inside = text.strip_prefix("{::")?;
+        let close = inside.find('}')?;
+        let inside = &inside[..close];
+        let name_len = inside
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(inside.len());
+        let name = &inside[..name_len];
+        let after = &inside[name_len..];
+        if !self.reads(name) || !(after.is_empty() || after.starts_with([' ', '\t', '/'])) {
+            return None;
+        }
+        let closed = after.trim_end().ends_with('/');
+        let html = name != "nomarkdown"
+            || Self::type_of(after).is_none_or(|kind| kind.is_empty() || kind.contains("html"));
+        Some(StartTag {
+            name,
+            len: "{::".len() + close + 1,
+            closed,
+            html,
+        })
+    }
+
+    /// The length of the end tag at the start of `text` of an extension
+    /// read, `{:/name}` or `{:/}`.
+    fn end_tag(&self, text: &str) -> Option<usize> {
+        let inside = text.strip_prefix("{:/")?;
+        let name = &inside[..inside.find('}')?];
+        (name.is_empty() || self.reads(name)).then(|| "{:/}".len() + name.len())
+    }
+
+    /// Where the first end tag for `name` in `text` is, and its length.
+    fn find_end(text: &str, name: &str) -> Option<(usize, usize)> {
+        text.match_indices("{:/").find_map(|(at, _)| {
+            let inside = &text[at + "{:/".len()..];
+            let tag = &inside[..inside.find('}')?];
+            (tag.is_empty() || tag == name).then(|| (at, "{:/}".len() + tag.len()))
+        })
+    }
+
+    /// Whether `trimmed` is a line of only an end tag for `name`.
+    fn closes(trimmed: &str, name: &str) -> bool {
+        Self::find_end(trimmed, name).is_some_and(|(at, len)| at == 0 && len == trimmed.len())
+    }
+
+    /// The value of the `type` in the rest of a start tag, if any.
+    fn type_of(rest: &str) -> Option<&str> {
+        let after = &rest[rest.find("type=")? + "type=".len()..];
+        let quote = after.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+        let value = &after[1..];
+        Some(&value[..value.find(quote)?])
+    }
+
+    /// Whether the extension `name` is read.
+    fn reads(&self, name: &str) -> bool {
+        match name {
+            "comment" => self.comments,
+            "nomarkdown" => self.nomarkdown,
+            _ => false,
+        }
     }
 }
 
@@ -947,18 +1206,45 @@ mod tests {
     }
 
     #[test]
-    fn end_of_blocks_mark_only_lines_of_a_marker() {
+    fn stand_ins_mark_only_lines_of_an_end_of_block_marker() {
         let src = "a\n^\n> b\n>  ^ \n";
-        let (text, offsets, marks) = EndOfBlocks::mark(src);
+        let (text, offsets, marks) = StandIns::mark(src, true, false, false);
         assert_eq!(text, "a\n<!---->\n> b\n>  <!----> \n");
-        assert_eq!(marks, [2, 17]);
+        let at: Vec<_> = marks.iter().map(|mark| (mark.at, mark.block)).collect();
+        assert_eq!(at, [(2, true), (17, true)]);
         assert_eq!(was(src, &text, &offsets, "<!---->"), "^");
         assert_ranges_fit(src, &text, &offsets);
         // Not with more on the line, as code, in a fence, or in HTML.
         let src = "^ a\n\n    ^\n\n```\n^\n```\n\n<div>\n^\n</div>\n";
-        let (text, _, marks) = EndOfBlocks::mark(src);
+        let (text, _, marks) = StandIns::mark(src, true, false, false);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(marks.is_empty());
+    }
+
+    #[test]
+    fn stand_ins_mark_extensions_closed_and_escape_the_rest() {
+        let src = "{::comment}\na {:/} b\n\n{:/comment}\n{::nomarkdown type=\"latex\"}\nc\n{:/}\n\
+            d {::comment}e{:/} `{::comment}f{:/}` {::nomarkdown/} {:/} {::comment} {:/other}\n";
+        let (text, offsets, marks) = StandIns::mark(src, false, true, true);
+        assert_eq!(
+            text,
+            "<!---->\n<!---->\nd <kd:x> `{::comment}f{:/}` <kd:x> \\{:/} \\{::comment} {:/other}\n"
+        );
+        let stands_for: Vec<_> = marks.iter().map(|mark| mark.stands_for).collect();
+        assert_eq!(
+            stands_for,
+            [
+                StandIn::Comment("a {:/} b\n\n"),
+                StandIn::Nothing,
+                StandIn::Comment("e"),
+                StandIn::Nothing,
+            ]
+        );
+        assert_eq!(was(src, &text, &offsets, "<kd:x> `"), "{::comment}e{:/} `");
+        assert_ranges_fit(src, &text, &offsets);
+        // Only the extensions read: here, the two `nomarkdown`.
+        let (_, _, marks) = StandIns::mark(src, false, false, true);
+        assert_eq!(marks.len(), 2);
     }
 
     #[test]

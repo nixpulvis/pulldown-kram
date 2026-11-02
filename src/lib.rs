@@ -148,10 +148,10 @@
 //! - [x] The empty span attribute list, `{::}`, separating spans.
 //! - [ ] Attribute list definitions, `{:name: .class}`. Dropped, never
 //!   applied.
-//! - [ ] The `comment` extension. Its tags are dropped on lines of their
-//!   own, read as text inside a line, and its body is always read.
-//! - [ ] The `nomarkdown` extension. Its tags are dropped and its body is
-//!   read as Markdown.
+//! - [x] The `comment` extension, a block or a span, given out as an HTML
+//!   comment.
+//! - [x] The `nomarkdown` extension, a block or a span, given out as HTML
+//!   as it is, unless its `type` is another converter's.
 //! - [ ] The `options` extension. Dropped.
 //! - [x] Tags of extensions kramdown doesn't have, like `{::something}`,
 //!   kept as text.
@@ -188,7 +188,9 @@ pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
-use source::{AttributeLines, DefinitionLines, EndOfBlocks, MarkdownElements, Offsets, SpanTags};
+use source::{
+    AttributeLines, DefinitionLines, Mark, MarkdownElements, Offsets, SpanTags, StandIns,
+};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -196,8 +198,8 @@ pub struct Document<'a> {
     text: Cow<'a, str>,
     /// Where the rewritten text was in the markdown.
     offsets: Offsets,
-    /// Where each end-of-block marker's stand-in starts in the text.
-    end_of_blocks: Vec<usize>,
+    /// The stand-ins in the text, for what CommonMark has no way to read.
+    marks: Vec<Mark<'a>>,
     options: Options,
 }
 
@@ -206,54 +208,58 @@ impl<'a> Document<'a> {
     /// for every kramdown extension, or just the [`Extensions`].
     pub fn new(markdown: &'a str, options: impl Into<Options>) -> Self {
         let options = options.into();
+        let reads = |extension| options.kramdown.contains(extension);
         // Rewrite what CommonMark reads differently, before it's read.
         let mut text = Cow::Borrowed(markdown);
         let mut offsets = Offsets::default();
-        if options
-            .kramdown
-            .contains(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
+        let mut marks = Vec::new();
+        // First, for what the stand-ins stand for to be in the markdown.
+        if reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS)
+            || reads(Extensions::ENABLE_COMMENT_EXTENSION)
+            || reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION)
         {
-            (text, offsets) = MarkdownElements::separate(markdown);
+            (text, offsets, marks) = StandIns::mark(
+                markdown,
+                reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS),
+                reads(Extensions::ENABLE_COMMENT_EXTENSION),
+                reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION),
+            );
         }
-        if options
-            .kramdown
-            .contains(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
-            && let (Cow::Owned(joined), joins) = SpanTags::join(&text)
-        {
-            text = Cow::Owned(joined);
-            offsets = offsets.then(joins);
-        }
-        if options
-            .kramdown
-            .contains(Extensions::ENABLE_BLOCK_ATTRIBUTES)
-            && let (Cow::Owned(separated), lines) = AttributeLines::separate(&text)
+        // Moves the marks past `edits`, and adds them to the offsets.
+        let mut then = |offsets: &mut Offsets, edits: Offsets| {
+            for mark in &mut marks {
+                mark.at = edits.moved(mark.at);
+            }
+            *offsets = std::mem::take(offsets).then(edits);
+        };
+        if reads(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
+            && let (Cow::Owned(separated), edits) = MarkdownElements::separate(&text)
         {
             text = Cow::Owned(separated);
-            offsets = offsets.then(lines);
+            then(&mut offsets, edits);
         }
-        if options
-            .kramdown
-            .contains(Extensions::ENABLE_DEFINITION_LISTS)
+        if reads(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
+            && let (Cow::Owned(joined), edits) = SpanTags::join(&text)
+        {
+            text = Cow::Owned(joined);
+            then(&mut offsets, edits);
+        }
+        if reads(Extensions::ENABLE_BLOCK_ATTRIBUTES)
+            && let (Cow::Owned(separated), edits) = AttributeLines::separate(&text)
+        {
+            text = Cow::Owned(separated);
+            then(&mut offsets, edits);
+        }
+        if reads(Extensions::ENABLE_DEFINITION_LISTS)
             && let (Cow::Owned(rewritten), edits) = DefinitionLines::rewrite(&text)
         {
             text = Cow::Owned(rewritten);
-            offsets = offsets.then(edits);
-        }
-        // Last, as later edits would move the marks.
-        let mut end_of_blocks = Vec::new();
-        if options
-            .kramdown
-            .contains(Extensions::ENABLE_END_OF_BLOCK_MARKERS)
-            && let (Cow::Owned(marked), edits, marks) = EndOfBlocks::mark(&text)
-        {
-            text = Cow::Owned(marked);
-            offsets = offsets.then(edits);
-            end_of_blocks = marks;
+            then(&mut offsets, edits);
         }
         Self {
             text,
             offsets,
-            end_of_blocks,
+            marks,
             options,
         }
     }
@@ -264,7 +270,7 @@ impl<'a> Document<'a> {
     /// lists after a block are for it. With tables of contents, they're all
     /// read first, for the tables to link to the headings after them.
     pub fn events(&self) -> Events<'_> {
-        let reader = read::Reader::new(&self.text, self.options, &self.end_of_blocks);
+        let reader = read::Reader::new(&self.text, self.options, &self.marks);
         let items = if self
             .options
             .kramdown

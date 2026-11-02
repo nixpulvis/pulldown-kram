@@ -50,3 +50,8 @@ The first release.
   blank line comes after it. pulldown-cmark decides for the whole list.
 - `Extensions::ENABLE_MIXED_LIST_MARKERS` reads a list whose items are
   marked with any of `*`, `+` and `-` as one list, as kramdown does.
+- `Extensions::ENABLE_COMMENT_EXTENSION` reads kramdown's `comment`
+  extension, giving its text out as an HTML comment, where its text was
+  read as Markdown, and `Extensions::ENABLE_NOMARKDOWN_EXTENSION` its
+  `nomarkdown`, giving its text out as HTML as it is. Their tags left
+  unclosed stay text, as in kramdown.

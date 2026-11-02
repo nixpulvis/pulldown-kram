@@ -152,6 +152,13 @@ bitflags! {
         /// One list whichever of `*`, `+` and `-` marks each of its items,
         /// where CommonMark starts a new list at each change of mark.
         const ENABLE_MIXED_LIST_MARKERS = 1 << 18;
+        /// The `comment` extension, `{::comment}…{:/}`, a block or a span,
+        /// its text given out as an HTML comment.
+        const ENABLE_COMMENT_EXTENSION = 1 << 19;
+        /// The `nomarkdown` extension, `{::nomarkdown}…{:/}`, a block or a
+        /// span, its text given out as HTML as it is, unless its `type`
+        /// is for another of kramdown's converters, like `latex`.
+        const ENABLE_NOMARKDOWN_EXTENSION = 1 << 20;
     }
 }
 
