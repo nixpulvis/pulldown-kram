@@ -467,6 +467,29 @@ fn end_of_block_markers() {
 }
 
 #[test]
+fn list_item_paragraphs() {
+    let extension = Extension::new(Extensions::ENABLE_LIST_ITEM_PARAGRAPHS);
+    // Bare unless a blank line comes after it, for each item.
+    extension.reads(
+        "* a\n* b\n\n* c\n",
+        "<ul><li>a</li>\n<li><p>b</p>\n</li>\n<li>c</li>\n</ul>\n",
+        "<ul><li><p>a</p>\n</li>\n<li><p>b</p>\n</li>\n<li><p>c</p>\n</li>\n</ul>\n",
+    );
+    // The last item's only paragraph, with a blank line after it, is bare
+    // only if an item before it is.
+    extension.reads(
+        "1. a\n\n2. b\n\npara\n",
+        "<ol><li><p>a</p>\n</li>\n<li><p>b</p>\n</li>\n</ol>\n<p>para</p>\n",
+        "<ol><li><p>a</p>\n</li>\n<li><p>b</p>\n</li>\n</ol>\n<p>para</p>\n",
+    );
+    extension.reads(
+        "* a\n* b\n\npara\n",
+        "<ul><li>a</li>\n<li>b</li>\n</ul>\n<p>para</p>\n",
+        "<ul><li>a</li>\n<li>b</li>\n</ul>\n<p>para</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

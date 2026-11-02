@@ -12,6 +12,7 @@ use pulldown_cmark::{
 use crate::attributes::Lists;
 use crate::definitions::DefinitionLists;
 use crate::headings::HeaderIds;
+use crate::lists::ListItems;
 use crate::source::MarkdownElements;
 use crate::{Extensions, Options};
 
@@ -750,6 +751,12 @@ impl<'a> Reader<'a> {
         self.ids.assign(&mut items, self.text, self.kramdown);
         if self.kramdown.contains(Extensions::ENABLE_DEFINITION_LISTS) {
             DefinitionLists::new(self.text).rewrite(&mut items);
+        }
+        if self
+            .kramdown
+            .contains(Extensions::ENABLE_LIST_ITEM_PARAGRAPHS)
+        {
+            ListItems::new(self.text).rewrite(&mut items);
         }
         if self.kramdown.contains(Extensions::ENABLE_TASK_LISTS) {
             Item::mark_task_lists(&mut items);

@@ -13,13 +13,10 @@ block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented cod
 block/07_horizontal_rule/error # long dash runs made into other dashes
 block/08_list/escaping # lists starting at any number interrupting a paragraph
 block/08_list/item_ial # nomarkdown extension
-block/08_list/lazy # list item paragraphs (kramdown wraps per item, not per loose list)
 block/08_list/lazy_and_nested # list nesting by indentation under an ordered item
-block/08_list/list_and_others # mixing *, + and - in one list; list item paragraphs
-block/08_list/mixed # mixing *, + and - in one list; list item paragraphs; tab-indented nesting
+block/08_list/list_and_others # mixing *, + and - in one list
+block/08_list/mixed # mixing *, + and - in one list; tab-indented nesting
 block/08_list/other_first_element # code in an item with nothing on its first line indented by two, not four
-block/08_list/simple_ol # list item paragraphs (kramdown wraps per item, not per loose list)
-block/08_list/simple_ul # list item paragraphs (kramdown wraps per item, not per loose list)
 block/08_list/special_cases # nested list after a paragraph in an item
 block/09_html/cdata_section # CDATA kept, kramdown writes its content
 block/09_html/comment # HTML block after a comment line; comment inside a paragraph

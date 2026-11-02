@@ -76,6 +76,8 @@
 //!   `{: .language-ruby}`, when the fence gives none.
 //! - [x] Ordered and unordered lists, nested, compact, or with a code block
 //!   first, and `1984\.` escaping a marker.
+//! - [x] A list item's first paragraph bare unless a blank line comes after
+//!   it, decided for each item, not for the whole list.
 //! - [ ] Mixing `*`, `+` and `-` in one list. Each change of marker starts a
 //!   new list.
 //! - [ ] Ordered lists numbered from 1 whatever the first number. The first
@@ -172,6 +174,7 @@ mod attributes;
 mod definitions;
 mod headings;
 pub mod html;
+mod lists;
 mod options;
 mod read;
 mod source;

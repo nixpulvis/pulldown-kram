@@ -145,6 +145,10 @@ bitflags! {
         /// The end-of-block marker, a line of only `^`, ending the blocks
         /// open at it, like a list or a code block, and giving out nothing.
         const ENABLE_END_OF_BLOCK_MARKERS = 1 << 16;
+        /// Whether a list item's first paragraph is bare decided for each
+        /// item, as kramdown does, rather than for the whole list: bare
+        /// unless a blank line comes after it in the item.
+        const ENABLE_LIST_ITEM_PARAGRAPHS = 1 << 17;
     }
 }
 

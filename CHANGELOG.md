@@ -45,3 +45,6 @@ The first release.
 - `Extensions::ENABLE_END_OF_BLOCK_MARKERS` reads kramdown's end-of-block
   marker, a line of only `^`, ending the paragraph, list, quote or code
   block before it.
+- `Extensions::ENABLE_LIST_ITEM_PARAGRAPHS` decides whether a list item's
+  first paragraph is bare for each item, as kramdown does: bare unless a
+  blank line comes after it. pulldown-cmark decides for the whole list.
