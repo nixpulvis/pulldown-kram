@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn entries_go_under_the_last_heading_of_a_higher_level() {
+    fn toc_replace_lists_puts_entries_under_the_last_heading_of_a_higher_level() {
         let items = toc("* x\n{:toc}\n\n## A\n# B\n### C\n## D\n", Extensions::all());
         assert_eq!(
             outline(&items),
@@ -258,14 +258,14 @@ mod tests {
     }
 
     #[test]
-    fn the_list_keeps_its_numbering_and_attributes() {
+    fn toc_replace_lists_keeps_the_lists_numbering_and_attributes() {
         let items = toc("3. x\n{:toc .t}\n\n# A\n", Extensions::all());
         assert_eq!(outline(&items), "<ol start=3><li><a #a>A</a></li></ol>");
         assert!(items[0].lists.attributes.has_class("t"));
     }
 
     #[test]
-    fn headings_without_ids_are_left_out() {
+    fn toc_replace_lists_leaves_out_headings_without_ids() {
         let items = toc(
             "* x\n{:toc}\n\n# A\n# B {#b}\n",
             Extensions::all() - Extensions::ENABLE_AUTO_IDS,
@@ -277,13 +277,13 @@ mod tests {
     }
 
     #[test]
-    fn unmarked_lists_stay() {
+    fn toc_replace_lists_leaves_unmarked_lists() {
         let items = toc("* x\n\n# A\n", Extensions::all());
         assert_eq!(outline(&items), "<ul><li>x</li></ul>");
     }
 
     #[test]
-    fn tables_past_the_budget_leave_their_lists_as_written() {
+    fn toc_replace_lists_within_leaves_tables_past_the_budget_as_written() {
         let text = "* x\n{:toc}\n\np\n\n* x\n{:toc}\n\np\n\n* x\n{:toc}\n\n# A\n";
         let read = || Reader::new(text, Options::from(Extensions::all())).collect();
         let made = "<ul><li><a #a>A</a></li></ul>";
@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn the_budget_is_at_least_100_000_items() {
+    fn toc_replace_lists_budget_is_at_least_100_000_items() {
         // 300 tables of 300 headings would be 450,600 items, far more than
         // the document's, so only as many tables as fit in 100,000 are made.
         let text = "* x\n{:toc}\n\n# h\n\n".repeat(300);

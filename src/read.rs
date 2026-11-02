@@ -811,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    fn span_lists_go_to_the_span_they_follow() {
+    fn reader_span_lists_go_to_the_span_they_follow() {
         let items = read("~~a~~{:.s} **b**{:.t} [c](d){:.u} ![e](f){:.v}\n");
         assert_eq!(
             classed(&items),
@@ -826,21 +826,21 @@ mod tests {
     }
 
     #[test]
-    fn text_after_span_lists_stays() {
+    fn reader_text_after_span_lists_stays() {
         let items = read("*a*{:.x}b c\n");
         assert_eq!(classed(&items), [("em", "x".into())]);
         assert_eq!(text(&items), "ab c");
     }
 
     #[test]
-    fn a_single_tilde_ends_no_span() {
+    fn reader_a_single_tilde_ends_no_span() {
         let items = read("~a~{:.x}\n");
         assert!(classed(&items).is_empty());
         assert_eq!(text(&items), "~a~{:.x}");
     }
 
     #[test]
-    fn item_lists_in_a_loose_list() {
+    fn reader_item_lists_in_a_loose_list() {
         let items = read("* {:.x}   a\n\n* b\n");
         assert_eq!(classed(&items), [("li", "x".into())]);
         assert_eq!(text(&items), "ab");
@@ -883,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn end_of_finds_the_matching_end() {
+    fn item_end_of_finds_the_matching_end() {
         let items: Vec<_> = [
             Event::Start(Tag::List(None)),
             Event::Start(Tag::Item),
@@ -904,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn language_from_the_first_language_class_when_the_fence_has_none() {
+    fn item_take_language_from_classes_when_the_fence_has_none() {
         let language = |kind| {
             let mut item = Item::new(Event::Start(Tag::CodeBlock(kind)), 0..0);
             item.lists.attributes.classes =

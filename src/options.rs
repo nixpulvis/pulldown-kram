@@ -197,7 +197,7 @@ mod tests {
     use pulldown_cmark::Options as Cmark;
 
     #[test]
-    fn kramdown_needs_nothing_more() {
+    fn options_parser_options_kramdown_needs_nothing_more() {
         assert_eq!(
             Options::from(Extensions::all()).parser_options(),
             Cmark::ENABLE_TABLES
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn cmark_adds_only_what_kramdown_lacks() {
+    fn options_parser_options_cmark_adds_only_what_kramdown_lacks() {
         let options = Options::new(Extensions::empty(), Cmark::all()).parser_options();
         assert!(!options.intersects(Extensions::all().cmark_options()));
         assert!(!options.contains(Cmark::ENABLE_HEADING_ATTRIBUTES));

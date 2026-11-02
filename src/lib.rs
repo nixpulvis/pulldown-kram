@@ -368,7 +368,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn events_read_afresh_each_time() {
+    fn document_events_read_afresh_each_time() {
         let document = Document::new("# A\n# A\n", Extensions::all());
         let ids = || -> Vec<String> {
             document
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn reading_all_first_reads_what_streaming_does() {
+    fn document_events_reading_all_first_reads_what_streaming_does() {
         let markdown = "# A {#x}\n\npara\n{:.y}\n\n* *b*{:.z}\n\n> q\n\n{:.w}\n\n---\n";
         let all = Document::new(markdown, Extensions::all());
         let streamed = Document::new(
@@ -397,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn offsets_are_into_the_markdown() {
+    fn events_into_offset_iter_offsets_are_into_the_markdown() {
         let documents = [
             // Nothing rewritten.
             "# Héading {#h}\n\nSome *tëxt*{:.x} and `code`.\n\n* one\n* two\n{:.list}\n\n> quote\n",
@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn offsets_find_text_after_rewrites() {
+    fn events_into_offset_iter_finds_text_after_rewrites() {
         let markdown = "<div markdown=\"1\">\n<b>  \n*x*{:.y}\n</div>\n\nafter ü\n";
         let document = Document::new(markdown, Extensions::all());
         assert!(!document.offsets.is_empty());

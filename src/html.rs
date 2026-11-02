@@ -807,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn footnotes_are_numbered_by_first_reference_and_written_last() {
+    fn push_html_footnotes_are_numbered_by_first_reference_and_written_last() {
         let out = html("a[^b] c[^A] d[^b]\n\n[^a]: x[^c]\n\n[^b]: y\n\n[^c]: z\n");
         assert!(out.starts_with("<p>a<sup"));
         assert!(out.contains("</p>\n<div class=\"footnotes\""));
@@ -827,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn a_footnote_not_ending_in_a_paragraph_gets_one_for_its_backlink() {
+    fn push_html_a_footnote_not_ending_in_a_paragraph_gets_one_for_its_backlink() {
         let out = html("a[^1]\n\n[^1]: > q\n");
         let footnote = &out[out.find("<li").unwrap()..];
         assert_eq!(
@@ -839,14 +839,14 @@ mod tests {
     }
 
     #[test]
-    fn math_alone_in_a_paragraph_is_a_block() {
+    fn push_html_math_alone_in_a_paragraph_is_a_block() {
         assert_eq!(html("$$x$$\n"), "\\[x\\]\n");
         assert_eq!(html("$$x$$\n{:.m}\n"), "<div class=\"m\">\\[x\\]\n</div>\n");
         assert_eq!(html("a $$x$$\n"), "<p>a \\(x\\)</p>\n");
     }
 
     #[test]
-    fn tables_align_cells_and_start_a_body_after_the_header() {
+    fn push_html_tables_align_cells_and_start_a_body_after_the_header() {
         assert_eq!(
             html("a | b | c\n:-|:-:|-\n1 | 2 | 3\n"),
             "<table><thead><tr>\
@@ -862,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    fn attribute_values_are_escaped() {
+    fn push_html_attribute_values_are_escaped() {
         assert_eq!(
             html("a\n{: title=\"x\\\"<y>&\"}\n"),
             "<p title=\"x&quot;&lt;y&gt;&amp;\">a</p>\n"
@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn a_code_blocks_language_goes_on_its_code() {
+    fn push_html_a_code_blocks_language_goes_on_its_code() {
         // The fence's language first, the other classes on the `pre`.
         assert_eq!(
             html("```rb\nx\n```\n{: .language-py .k}\n"),
@@ -883,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn io_writes_what_fmt_does_and_returns_its_errors() {
+    fn write_html_io_writes_what_push_html_does_and_returns_its_errors() {
         let markdown = "# A\n\nb[^1]\n\n[^1]: c\n";
         let document = Document::new(markdown, Extensions::all());
         let mut bytes = Vec::new();

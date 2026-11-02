@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_ids_need_a_space_and_a_name() {
+    fn header_ids_assign_explicit_ids_need_a_space_and_a_name() {
         let text = "# A {#b}\n# C{#d}\n# E {#1f}\n# G {#h i}\n# J {#k} *l*\n";
         assert_eq!(
             headings(&assign(text, |_| {})),
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_hashes_go_only_in_atx_headings() {
+    fn header_ids_assign_closing_hashes_go_only_in_atx_headings() {
         let text = "# A # {#b}\n\nC # {#d}\n===\n\n# E# {#f}\n";
         assert_eq!(
             headings(&assign(text, |_| {})),
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn an_attribute_lists_id_wins() {
+    fn header_ids_assign_an_attribute_lists_id_wins() {
         let items = assign("# A {#b}\n", |items| {
             items[0].lists.attributes.id = Some("c".into());
         });
@@ -219,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn made_ids_keep_word_characters_and_count_repeats() {
+    fn header_ids_unique_keeps_word_characters_and_counts_repeats() {
         let mut ids = HeaderIds::default();
         assert_eq!(ids.unique("Ünï Code!\tx_y-z"), "ünï-code-x_y-z");
         assert_eq!(ids.unique("A"), "a");

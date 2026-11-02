@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn separates_markdown_from_tags() {
+    fn markdown_elements_separate_splits_markdown_from_tags() {
         let src = "<div markdown=\"1\">\n```rust\n</div>\n```\n<div>\n</div>\n</div>\nafter\n";
         assert_eq!(
             MarkdownElements::separate(src).0,
@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn span_tags_start_paragraphs() {
+    fn span_tags_join_starts_paragraphs_with_span_tags() {
         assert_eq!(
             SpanTags::join("<img src=\"a\" />\n![b](c)\n").0,
             "<img src=\"a\" /> ![b](c)\n"
@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn span_tags_ignore_case_and_may_close() {
+    fn span_tags_join_ignores_case_and_joins_closing_tags() {
         assert_eq!(SpanTags::join("<IMG src=x>\na\n").0, "<IMG src=x> a\n");
         assert_eq!(SpanTags::join("</span>\na\n").0, "</span> a\n");
         // Not two tags on a line.
@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn a_markdown_element_ending_the_input_gets_its_blank_line() {
+    fn markdown_elements_separate_gives_an_element_ending_the_input_its_blank_line() {
         let src = "<div markdown=\"1\">";
         let (text, offsets) = MarkdownElements::separate(src);
         assert_eq!(text, "<div markdown=\"1\">\n\n");
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn offsets_skip_added_blank_lines() {
+    fn offsets_original_skips_added_blank_lines() {
         let src = "<div markdown=\"1\">\nä *ö*\n</div>\nü\n";
         let (text, offsets) = MarkdownElements::separate(src);
         assert_eq!(text, "<div markdown=\"1\">\n\nä *ö*\n\n</div>\nü\n");
@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn offsets_take_in_joined_line_ends() {
+    fn offsets_original_takes_in_joined_line_ends() {
         let src = "<img alt=\"é\" />  \r\nä\n<b>\nö\n";
         let (text, offsets) = SpanTags::join(src);
         assert_eq!(text, "<img alt=\"é\" /> ä\n<b> ö\n");
@@ -539,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn offsets_follow_both_rewrites() {
+    fn offsets_then_follows_both_rewrites() {
         let src = "<div markdown=\"1\">\n<b>\nü *x*\n</div>\n<i>  \ny\n";
         let (text, offsets) = rewrite(src);
         assert_eq!(text, "<div markdown=\"1\">\n\n<b> ü *x*\n\n</div>\n<i> y\n");
@@ -559,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn later_edits_may_replace_earlier_ones() {
+    fn offsets_then_lets_later_edits_replace_earlier_ones() {
         let src = "ab\ncd\n";
         let mut first = Rewrite::default();
         first.keep("ab");
@@ -583,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn fences_close_only_with_their_own_marks() {
+    fn fence_read_closes_only_with_its_own_marks() {
         let mut fence = Fence::default();
         assert!(!fence.read("a\n"));
         assert!(fence.read("~~~ruby\n"));

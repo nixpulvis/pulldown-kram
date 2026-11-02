@@ -296,7 +296,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_ids_classes_and_pairs() {
+    fn lists_parse_reads_ids_classes_and_pairs() {
         let text = r#"{:.new}{: .old.x #id k="v \" \}" j='w'} rest"#;
         let (lists, len) = Lists::parse(text).unwrap();
         let attributes = lists.attributes;
@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn later_attributes_win() {
+    fn lists_parse_later_attributes_win() {
         let attributes = Lists::parse(r#"{: .a class="b c" .d id="x" #y k="1" k="2"}"#)
             .unwrap()
             .0
@@ -324,13 +324,13 @@ mod tests {
     }
 
     #[test]
-    fn names_toc() {
+    fn lists_parse_names_toc() {
         assert!(Lists::parse("{:toc}").unwrap().0.toc);
         assert!(!Lists::parse("{:.toc}").unwrap().0.toc);
     }
 
     #[test]
-    fn definitions_and_extensions_give_nothing() {
+    fn lists_parse_definitions_and_extensions_give_nothing() {
         for list in ["{:ref: .x}", "{::comment}", "{:/comment}", "{::}"] {
             let (lists, len) = Lists::parse(list).unwrap();
             assert!(lists.attributes.is_empty(), "{list}");
@@ -339,27 +339,27 @@ mod tests {
     }
 
     #[test]
-    fn skips_what_isnt_an_id_or_class() {
+    fn lists_parse_skips_what_isnt_an_id_or_class() {
         let attributes = Lists::parse("{: #1x .a#  bare k=v}").unwrap().0.attributes;
         assert_eq!(attributes, Attributes::default());
     }
 
     #[test]
-    fn needs_a_closing_brace_on_the_line() {
+    fn lists_parse_needs_a_closing_brace_on_the_line() {
         assert!(Lists::parse("{:.a").is_none());
         assert!(Lists::parse("{:.a\n}").is_none());
         assert!(Lists::parse("text {:.a}").is_none());
     }
 
     #[test]
-    fn stops_at_a_list_left_open() {
+    fn lists_parse_stops_at_a_list_left_open() {
         let (lists, len) = Lists::parse("{:.a}{:.b").unwrap();
         assert_eq!(lists.attributes.classes, ["a".into()]);
         assert_eq!(len, "{:.a}".len());
     }
 
     #[test]
-    fn unescapes_only_the_quote_and_brace() {
+    fn lists_parse_unescapes_only_the_quote_and_brace() {
         let attributes = Lists::parse(r#"{:k="a\b\'\}" j='\''}"#)
             .unwrap()
             .0
@@ -374,14 +374,14 @@ mod tests {
     }
 
     #[test]
-    fn ids_start_with_an_ascii_letter_but_classes_need_not() {
+    fn lists_parse_ids_start_with_an_ascii_letter_but_classes_need_not() {
         let attributes = Lists::parse("{: #über .ünï}").unwrap().0.attributes;
         assert_eq!(attributes.id, None);
         assert_eq!(attributes.classes, ["ünï".into()]);
     }
 
     #[test]
-    fn extending_keeps_order_and_lets_the_other_win() {
+    fn lists_extend_keeps_order_and_lets_the_other_win() {
         let parse = |text| Lists::parse(text).unwrap().0;
         let mut lists = parse(r#"{:#a .x k="1" j="2"}"#);
         lists.extend(parse(r#"{:toc #b .y k="3"}"#));
@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn a_word_running_into_a_wide_character_is_skipped() {
+    fn lists_parse_skips_a_word_running_into_a_wide_character() {
         // The id ends at `é`, which is neither an id nor a class.
         let attributes = Lists::parse("{: #aé .b}").unwrap().0.attributes;
         assert_eq!(attributes.id, None);

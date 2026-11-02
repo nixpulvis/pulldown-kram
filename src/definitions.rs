@@ -130,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn terms_split_only_outside_spans() {
+    fn definition_lists_rewrite_splits_terms_only_outside_spans() {
         let text = "a\n*b\nc*\nd\n: e\n";
         let mut items = items(text);
         DefinitionLists::new(text).rewrite(&mut items);
@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_definition_takes_its_paragraphs_attributes() {
+    fn definition_lists_rewrite_gives_a_bare_definition_its_paragraphs_attributes() {
         // Loose, as pulldown-cmark only gives a loose list's definitions
         // paragraphs.
         for (text, bare) in [("a\n: b\n\n  c\n", true), ("a\n\n: b\n\n  c\n", false)] {
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn blank_lines_may_hold_spaces_and_quote_markers() {
+    fn definition_lists_blank_line_before_allows_spaces_and_quote_markers() {
         let lists = DefinitionLists::new("a\n>\n  \nb\nc");
         // The first line has none before it.
         assert!(!lists.blank_line_before(0));
