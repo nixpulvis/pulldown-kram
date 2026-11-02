@@ -81,8 +81,8 @@ pub(crate) struct Reader<'a> {
     pending: Pending<'a>,
     /// The indices of the last top-level block read, and the one before it,
     /// which an attribute list may still be for.
-    block: Option<usize>,
-    previous_block: Option<usize>,
+    block: Option<Index>,
+    previous_block: Option<Index>,
     /// What lists alone between blocks give the next block.
     next: Option<Lists<'a>>,
     split: Option<Split>,
@@ -101,16 +101,34 @@ pub(crate) struct Reader<'a> {
 struct Pending<'a> {
     slots: Vec<Slot<'a>>,
     /// The index of the first slot.
-    base: usize,
+    base: Index,
     /// The indices of the elements open, innermost last.
-    open: Vec<usize>,
+    open: Vec<Index>,
+}
+
+/// Where an item is in `Pending`, counting every item read from the first,
+/// so it holds as the items before it are given out. A position in a slice
+/// of items is a plain `usize`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct Index(usize);
+
+impl Index {
+    /// The index `by` items after this one.
+    fn advance(self, by: usize) -> Index {
+        Index(self.0 + by)
+    }
+
+    /// The index of the item right before this one, unless it's the first.
+    fn previous(self) -> Option<Index> {
+        self.0.checked_sub(1).map(Index)
+    }
 }
 
 /// An item read, but not given out until no more lists can be for it.
 struct Slot<'a> {
     item: Item<'a>,
     /// For an end, the index of its start.
-    start: Option<usize>,
+    start: Option<Index>,
 }
 
 /// A paragraph that lists on lines of their own have ended, for the lines
@@ -118,7 +136,7 @@ struct Slot<'a> {
 #[derive(Clone, Copy)]
 struct Split {
     /// The index of the paragraph's start.
-    paragraph: usize,
+    paragraph: Index,
     /// Where in the source the paragraph ends, at the lists.
     end: usize,
 }
@@ -126,9 +144,9 @@ struct Split {
 /// What an attribute list is for, by where it is.
 enum Target {
     /// Right after a span, like `*a*{:.x}`: the span at this index.
-    Span(usize),
+    Span(Index),
     /// At the start of a list item, like `* {:.x} a`: the item at this index.
-    Item(usize),
+    Item(Index),
     /// Alone on its line, `lazy` if it isn't indented or quoted like the
     /// lines before it.
     Line { lazy: bool },
@@ -299,7 +317,7 @@ impl<'a> Reader<'a> {
 
     /// The span the lists at `start` come right after, if `last` ends one
     /// there.
-    fn span_before(&self, last: usize, start: usize) -> Option<Target> {
+    fn span_before(&self, last: Index, start: usize) -> Option<Target> {
         let item = self.pending.item(last);
         if item.range.end != start {
             return None;
@@ -335,10 +353,10 @@ impl<'a> Reader<'a> {
     }
 
     /// The list item `last` starts, or starts the paragraph of.
-    fn item_starting(&self, last: usize) -> Option<Target> {
+    fn item_starting(&self, last: Index) -> Option<Target> {
         let item = match self.pending.item(last).event {
             Event::Start(Tag::Item) => last,
-            Event::Start(Tag::Paragraph) => last.checked_sub(1)?,
+            Event::Start(Tag::Paragraph) => last.previous()?,
             _ => return None,
         };
         self.pending
@@ -404,7 +422,7 @@ impl<'a> Reader<'a> {
     /// On the line right after a table, they're for the table, but
     /// pulldown-cmark reads the line as one more row, so the row is left
     /// out. Anywhere else, they're for the cell.
-    fn table_row(&mut self, cell: usize, lists: Lists<'a>) {
+    fn table_row(&mut self, cell: Index, lists: Lists<'a>) {
         let mut rest = Vec::new();
         for (event, range) in self.events.by_ref() {
             let end = matches!(event, Event::End(TagEnd::TableRow));
@@ -417,7 +435,7 @@ impl<'a> Reader<'a> {
                 break;
             }
         }
-        let row = cell.checked_sub(1);
+        let row = cell.previous();
         let first_cell = row
             .and_then(|row| self.pending.get(row))
             .is_some_and(|row| matches!(row.event, Event::Start(Tag::TableRow)));
@@ -488,7 +506,7 @@ impl<'a> Reader<'a> {
 
     /// Pushes `event`, starting a new paragraph first if lists ended the
     /// one it's in.
-    fn push(&mut self, event: Event<'a>, range: Range<usize>) -> usize {
+    fn push(&mut self, event: Event<'a>, range: Range<usize>) -> Index {
         if let Some(split) = self.split.take()
             && !matches!(event, Event::End(TagEnd::Paragraph))
         {
@@ -501,7 +519,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Gives out the items before `end`, with their ids and languages.
-    fn settle(&mut self, end: usize) {
+    fn settle(&mut self, end: Index) {
         let mut items = self.pending.take_before(end);
         self.ids.assign(&mut items, self.text, self.kramdown);
         if self.kramdown.contains(Extensions::ENABLE_DEFINITION_LISTS) {
@@ -555,7 +573,7 @@ impl<'a> Iterator for Reader<'a> {
 impl<'a> Pending<'a> {
     /// Pushes `event`, opening the element it starts or closing the one it
     /// ends, and returns its index.
-    fn push(&mut self, event: Event<'a>, range: Range<usize>) -> usize {
+    fn push(&mut self, event: Event<'a>, range: Range<usize>) -> Index {
         let i = self.end();
         let start = match event {
             Event::Start(_) => {
@@ -586,26 +604,31 @@ impl<'a> Pending<'a> {
     }
 
     /// Drops the item at `i` and every one after it, closing those open.
-    fn truncate(&mut self, i: usize) {
-        self.slots.truncate(i - self.base);
+    fn truncate(&mut self, i: Index) {
+        self.slots.truncate(self.offset(i));
         self.open.retain(|&open| open < i);
     }
 
     /// Takes out the items before `end`, for giving out.
-    fn take_before(&mut self, end: usize) -> Vec<Item<'a>> {
+    fn take_before(&mut self, end: Index) -> Vec<Item<'a>> {
         if end <= self.base {
             return Vec::new();
         }
         let items = self
             .slots
-            .drain(..end - self.base)
+            .drain(..self.offset(end))
             .map(|slot| slot.item)
             .collect();
         self.base = end;
         items
     }
 
-    fn attach(&mut self, i: usize, lists: Lists<'a>) {
+    /// Where the item at `i` is in `slots`. `i` mustn't be given out.
+    fn offset(&self, i: Index) -> usize {
+        i.0.checked_sub(self.base.0).expect("an item not given out")
+    }
+
+    fn attach(&mut self, i: Index, lists: Lists<'a>) {
         self.item_mut(i).lists.extend(lists);
     }
 
@@ -614,43 +637,47 @@ impl<'a> Pending<'a> {
     }
 
     /// The index the next item pushed gets.
-    fn end(&self) -> usize {
-        self.base + self.slots.len()
+    fn end(&self) -> Index {
+        self.base.advance(self.slots.len())
     }
 
-    fn last_index(&self) -> Option<usize> {
-        self.slots.len().checked_sub(1).map(|i| self.base + i)
+    fn last_index(&self) -> Option<Index> {
+        self.end().previous().filter(|_| !self.slots.is_empty())
     }
 
     fn last(&self) -> Option<&Item<'a>> {
         self.slots.last().map(|slot| &slot.item)
     }
 
-    fn get(&self, i: usize) -> Option<&Item<'a>> {
-        let slot = self.slots.get(i.checked_sub(self.base)?)?;
+    fn get(&self, i: Index) -> Option<&Item<'a>> {
+        if i < self.base {
+            return None;
+        }
+        let slot = self.slots.get(self.offset(i))?;
         Some(&slot.item)
     }
 
-    fn item(&self, i: usize) -> &Item<'a> {
-        &self.slots[i - self.base].item
+    fn item(&self, i: Index) -> &Item<'a> {
+        &self.slots[self.offset(i)].item
     }
 
-    fn item_mut(&mut self, i: usize) -> &mut Item<'a> {
-        &mut self.slots[i - self.base].item
+    fn item_mut(&mut self, i: Index) -> &mut Item<'a> {
+        let offset = self.offset(i);
+        &mut self.slots[offset].item
     }
 
     /// The index of the start of the end at `i`.
-    fn start_of(&self, i: usize) -> usize {
-        self.slots[i - self.base].start.expect("an end")
+    fn start_of(&self, i: Index) -> Index {
+        self.slots[self.offset(i)].start.expect("an end")
     }
 
     /// The indices of the elements open, outermost first.
-    fn open(&self) -> impl Iterator<Item = usize> + '_ {
+    fn open(&self) -> impl Iterator<Item = Index> + '_ {
         self.open.iter().copied()
     }
 
     /// The index of the innermost element open.
-    fn innermost(&self) -> Option<usize> {
+    fn innermost(&self) -> Option<Index> {
         self.open.last().copied()
     }
 
@@ -758,7 +785,7 @@ mod tests {
         assert_eq!(pending.last_index(), Some(end));
         // What's already given out can't be given again.
         assert!(pending.take_before(start).is_empty());
-        assert_eq!(pending.push(Event::Rule, 2..3), 3);
+        assert_eq!(pending.push(Event::Rule, 2..3), Index(3));
     }
 
     #[test]
