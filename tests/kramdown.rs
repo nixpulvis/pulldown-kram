@@ -262,6 +262,13 @@ fn block_attributes() {
         "<blockquote class=\"x\"><blockquote><p>q</p>\n</blockquote>\n</blockquote>\n",
         "<blockquote><blockquote><p>q\n{:.x}</p>\n</blockquote>\n</blockquote>\n",
     );
+    // A footnote's, which kramdown doesn't write, rather than its last
+    // paragraph's.
+    extension.needs(Extensions::ENABLE_FOOTNOTES).reads(
+        "a[^1]\n\n[^1]: b\n{: .x}\n",
+        "<p>a<sup id=\"fnref:1\"><a href=\"#fn:1\" class=\"footnote\" rel=\"footnote\" role=\"doc-noteref\">1</a></sup></p>\n<div class=\"footnotes\" role=\"doc-endnotes\">\n<ol>\n<li id=\"fn:1\">\n<p>b\u{a0}<a href=\"#fnref:1\" class=\"reversefootnote\" role=\"doc-backlink\">↩</a></p>\n</li>\n</ol>\n</div>\n",
+        "<p>a<sup id=\"fnref:1\"><a href=\"#fn:1\" class=\"footnote\" rel=\"footnote\" role=\"doc-noteref\">1</a></sup></p>\n<div class=\"footnotes\" role=\"doc-endnotes\">\n<ol>\n<li id=\"fn:1\">\n<p>b\n{: .x}\u{a0}<a href=\"#fnref:1\" class=\"reversefootnote\" role=\"doc-backlink\">↩</a></p>\n</li>\n</ol>\n</div>\n",
+    );
     extension.reads(
         "- a\n\n  b\n{:.x}\n",
         "<ul class=\"x\"><li><p>a</p>\n<p>b</p>\n</li>\n</ul>\n",

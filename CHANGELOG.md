@@ -76,3 +76,5 @@ The first release.
   out as an `<abbr>` with its title, in HTML events.
 - `Extensions::ENABLE_KRAMDOWN_ESCAPES` keeps the backslash before a
   character kramdown doesn't escape, like `\&`, which CommonMark escapes.
+- A block attribute list on a lazy line after a footnote definition is
+  for the footnote, as in kramdown, rather than its last paragraph.

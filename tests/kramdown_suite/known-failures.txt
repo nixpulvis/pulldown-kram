@@ -49,7 +49,6 @@ span/02_emphasis/nesting # emphasis inside the same emphasis; ***a*** nesting or
 span/02_emphasis/normal # ***a*** nesting order; emphasis delimiter runs
 span/03_codespan/normal # code span backslash and space handling
 span/04_footnote/backlink_inline # a table and a math block indented in footnote definitions read as text
-span/04_footnote/markers # block attribute list in a footnote definition
 span/04_footnote/placement # {:footnotes} placement list
 span/05_html/invalid # unclosed HTML span kept open
 span/05_html/markdown_attr # markdown="block", "span" and "0"; markdown attribute left in the HTML

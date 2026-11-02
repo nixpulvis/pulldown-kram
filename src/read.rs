@@ -795,8 +795,8 @@ impl<'a> Reader<'a> {
     /// they're for: the paragraph they start, the paragraph they end,
     /// splitting off the lines after them, the definition list whose first
     /// term's line they come before, or for a lazy line, the outermost
-    /// list, quote or definition list they're in. Those for a link
-    /// definition are already its links'.
+    /// list, quote, definition list or footnote definition they're in.
+    /// Those for a link definition are already its links'.
     fn line(&mut self, lists: Lists<'a>, lazy: bool, start: usize) {
         if self.definitions.lines.binary_search(&start).is_ok() {
             if matches!(self.pending.last(), Some(item) if matches!(item.event, Event::Start(Tag::Paragraph)))
@@ -843,7 +843,9 @@ impl<'a> Reader<'a> {
                     .pending
                     .open()
                     .find(|&i| match self.pending.item(i).event {
-                        Event::Start(Tag::List(_) | Tag::BlockQuote(_)) => true,
+                        Event::Start(
+                            Tag::List(_) | Tag::BlockQuote(_) | Tag::FootnoteDefinition(_),
+                        ) => true,
                         Event::Start(Tag::DefinitionList) => !in_term,
                         _ => false,
                     });
