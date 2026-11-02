@@ -1,9 +1,10 @@
-//! kramdown's own test cases, read with pulldown-kram and checked against
-//! kramdown's HTML for them, as pulldown-cmark checks itself against the
-//! CommonMark spec.
+//! kramdown's own test cases, and pulldown-kram's additions to them, read
+//! with pulldown-kram and checked against kramdown's HTML for them, as
+//! pulldown-cmark checks itself against the CommonMark spec.
 //!
-//! The cases are in testcases/ here, copied from kramdown 2.5.2. Their HTML
-//! is what kramdown makes of them with GFM input, as Jekyll runs it, with
+//! kramdown's cases are in testcases/ here, copied from kramdown 2.5.2, and
+//! the additions, for what those don't cover, in additions/. Their HTML is
+//! what kramdown makes of them with GFM input, as Jekyll runs it, with
 //! kramdown's default in place of each option pulldown-kram doesn't
 //! support; generate.rb makes it, and says how. It also writes cases.txt,
 //! which says for each case which extensions its options leave off. Each
@@ -12,7 +13,8 @@
 //! same elements. Both sides are then normalised, to erase how the HTML is
 //! formatted but not what it says, and compared.
 //!
-//! Each case is a test of its own, named by its path, so
+//! Each case is a test of its own, named by its path under testcases/, or
+//! for an addition by `additions/` and its path under additions/, so
 //! `cargo test --test kramdown_suite block/04_header` runs only those.
 //!
 //! Cases known to fail are listed in known-failures.txt, a case on each line
@@ -100,8 +102,8 @@ struct Case {
 impl Case {
     /// Every case, in the order of cases.txt.
     fn all() -> Vec<Self> {
-        let root = Path::new(SUITE).join("testcases");
-        let manifest = fs::read_to_string(Path::new(SUITE).join("cases.txt")).unwrap();
+        let suite = Path::new(SUITE);
+        let manifest = fs::read_to_string(suite.join("cases.txt")).unwrap();
         let list = |column: &str| -> Vec<String> {
             match column {
                 "-" => Vec::new(),
@@ -119,7 +121,13 @@ impl Case {
                     extensions -= Extensions::from_name(&flag)
                         .unwrap_or_else(|| panic!("cases.txt: no extension {flag}"));
                 }
-                let path = root.join(name);
+                // kramdown's cases are named by their path under testcases,
+                // the additions by theirs under the suite.
+                let path = if name.starts_with("additions/") {
+                    suite.join(name)
+                } else {
+                    suite.join("testcases").join(name)
+                };
                 Self {
                     name: name.to_owned(),
                     text: fs::read_to_string(path.with_extension("text")).unwrap(),
@@ -268,10 +276,10 @@ impl KnownFailures {
     /// already given for them.
     fn rewrite(&self, failed: &[Failure]) {
         let mut list = String::from(
-            "# kramdown's test cases pulldown-kram reads differently, checked by\n\
-             # tests/kramdown_suite/main.rs. A case on each line, with an optional\n\
-             # reason. UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite\n\
-             # rewrites it.\n",
+            "# The suite's cases pulldown-kram reads differently, kramdown's and the\n\
+             # additions, checked by tests/kramdown_suite/main.rs. A case on each\n\
+             # line, with an optional reason. UPDATE_KRAMDOWN_SUITE=1 cargo test\n\
+             # --test kramdown_suite rewrites it.\n",
         );
         for Failure { name, .. } in failed {
             match self.0.get(name).cloned().flatten() {

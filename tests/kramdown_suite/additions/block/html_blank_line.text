@@ -1,0 +1,12 @@
+<div>
+<img src="left.png" alt="Left" width="48%"
+style="float: left;" />
+
+<img src="right.png" alt="Right" width="48%" />
+</div>
+
+<div>
+First line.
+
+Second line.
+</div>

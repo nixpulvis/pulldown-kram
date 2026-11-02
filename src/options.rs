@@ -127,7 +127,9 @@ bitflags! {
         /// left out of the HTML.
         const ENABLE_MARKDOWN_ATTRIBUTE = 1 << 12;
         /// A line of only a span tag, like `<img>`, starting a paragraph
-        /// rather than an HTML block.
+        /// with the text on the line after it, rather than an HTML block. A
+        /// line of one with a blank line after it stays an HTML block, where
+        /// kramdown makes it a paragraph.
         const ENABLE_SPAN_TAG_PARAGRAPHS = 1 << 13;
         /// A code block's language from a `language-` class, like
         /// `{: .language-ruby}`, when its fence gives none. The class comes
@@ -168,7 +170,8 @@ bitflags! {
         const ENABLE_RAW_HTML_SPANS = 1 << 22;
         /// HTML blocks ending with the end tag of the element starting them,
         /// as kramdown's do, with any text after it read as Markdown, where
-        /// CommonMark's run to the next blank line.
+        /// CommonMark's run to the next blank line. A blank line before the
+        /// end tag still ends one, as in CommonMark.
         const ENABLE_HTML_BLOCK_ENDS = 1 << 23;
         /// Tables without a header row, like a line of only `| a | b |`,
         /// and a `|` in code in a table's cell kept in it, rather than

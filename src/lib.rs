@@ -79,6 +79,11 @@
 //! - [x] A list item's first paragraph bare unless a blank line comes after
 //!   it, decided for each item, not for the whole list.
 //! - [x] Mixing `*`, `+` and `-` in one list.
+//! - [ ] A fenced code block on the line after a list item's text, not
+//!   indented, kept in the item as a lazy line, its lines without the
+//!   item's indent. It ends the list.
+//! - [ ] A fenced code block in a list item, indented past the item's
+//!   content, keeping that indent on its lines. It's taken off.
 //! - [ ] Ordered lists numbered from 1 whatever the first number. The first
 //!   number is kept.
 //! - [x] Definition lists, a term on each line and a definition's first
@@ -97,6 +102,8 @@
 //! - [ ] A table of only separator lines. Read as a table.
 //! - [x] Horizontal rules.
 //! - [x] Math blocks, `$$` alone in a paragraph.
+//! - [ ] Math blocks only after a blank line, so `$$` right after a fence
+//!   or a header is inline math in a paragraph. It's a math block.
 //!
 //! ## HTML
 //!
@@ -104,13 +111,19 @@
 //! reading them to make what it will of.
 //!
 //! - [x] HTML blocks, Markdown in them left as HTML, ending with the end
-//!   tag of the element starting them, with Markdown after it.
+//!   tag of the element starting them, with Markdown after it, when no
+//!   blank line comes before that.
+//! - [ ] A blank line in an HTML block. It ends the block, as in
+//!   CommonMark, and what follows is read as Markdown.
 //! - [x] `markdown="1"` on a block element, its content read as Markdown
 //!   and the attribute left out.
 //! - [ ] `markdown="block"`, `markdown="span"` and `markdown="0"`. Their
 //!   content is left as HTML.
 //! - [ ] The `parse_block_html` option.
-//! - [x] A line of only a span tag, like `<img>`, starting a paragraph.
+//! - [x] A line of only a span tag, like `<img>`, starting a paragraph
+//!   with the text on the line after it.
+//! - [ ] A line of only a span tag with a blank line after it, a paragraph
+//!   of its own. It's an HTML block.
 //! - [x] HTML spans, with Markdown in them.
 //! - [x] The HTML spans kramdown leaves raw, like `<kbd>` and `<code>`,
 //!   their text given out as it is.
@@ -118,17 +131,25 @@
 //! ## Text markup
 //!
 //! - [x] Automatic links, `<http://example.com>` and `<me@example.com>`.
+//! - [ ] `<mailto:me@example.com>`, its text the address alone. The
+//!   `mailto:` stays in its text.
 //! - [x] Inline links, with titles in either quotes.
 //! - [ ] Spaces in an inline link's URL, `[a](b c.html)`. Read as text.
 //! - [x] Reference links, `[text][id]`, `[text][]` and `[text]`, ignoring
 //!   case.
 //! - [ ] Spaces or a line break between a reference link's brackets,
 //!   `[text]\n[id]`. Read as two links.
+//! - [ ] Brackets in a reference link's text, `[[1]][1]`. The inner
+//!   brackets are read as the link, and the outer as text.
 //! - [x] Link definitions, and `\:` to keep one as text.
 //! - [x] Images, inline and by reference.
+//! - [ ] An image's alt text as written, markup and straight quotes
+//!   included. Its markup is read and its quotes made typographic.
 //! - [x] Emphasis and strong emphasis, with `*` inside words but not `_`.
-//! - [ ] Emphasis inside the same emphasis, `*a _b_ c*`, staying literal.
-//!   It nests.
+//! - [ ] Emphasis inside the same emphasis, `*a _b_ c*` or `_*b*_`,
+//!   staying literal. It nests.
+//! - [ ] `***a***` as strong emphasis around emphasis. It's emphasis around
+//!   strong emphasis.
 //! - [x] Code spans.
 //! - [x] Footnotes, with blocks in their definitions.
 //! - [x] Abbreviations, `*[HTML]: …`, each use given out as an `<abbr>`, in

@@ -1,0 +1,13 @@
+A paragraph.
+
+<img src="photo.png" alt="A photo" width=300 />
+
+<br />
+
+<span />
+
+Another paragraph.
+
+1. An item
+
+    <img src="screenshot.png" alt="A screenshot" />

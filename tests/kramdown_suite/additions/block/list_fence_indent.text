@@ -1,0 +1,7 @@
+1. Build it yourself
+
+    ```
+    $ git clone https://example.com/project
+    $ cd project
+    $ make
+    ```

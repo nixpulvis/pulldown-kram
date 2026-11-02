@@ -33,7 +33,8 @@ pick up the attributes where it wants them.
 ## Tests
 
 `tests/kramdown.rs` checks each extension with it alone and with all but it.
-`tests/kramdown_suite/` runs kramdown's own test cases, with their expected
+`tests/kramdown_suite/` runs kramdown's own test cases, and pulldown-kram's
+additions to them in `tests/kramdown_suite/additions/`, with their expected
 HTML made by kramdown 2.5.2 reading GFM, as Jekyll does. The cases
 pulldown-kram reads differently are listed in
 `tests/kramdown_suite/known-failures.txt`.

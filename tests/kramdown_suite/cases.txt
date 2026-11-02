@@ -214,3 +214,13 @@ span/text_substitutions/greaterthan	ENABLE_AUTO_IDS	-
 span/text_substitutions/lowerthan	ENABLE_AUTO_IDS	-
 span/text_substitutions/typography	-	-
 span/text_substitutions/typography_subst	-	typographic_symbols
+additions/block/html_blank_line	-	-
+additions/block/list_fence_indent	-	-
+additions/block/list_lazy_fence	-	-
+additions/block/math_after_block	-	-
+additions/block/span_tag_alone	-	-
+additions/span/autolink_mailto	-	-
+additions/span/emphasis_in_emphasis	-	-
+additions/span/image_alt	-	-
+additions/span/link_text_brackets	-	-
+additions/span/strong_emphasis	-	-

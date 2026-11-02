@@ -1,7 +1,7 @@
-# kramdown's test cases pulldown-kram reads differently, checked by
-# tests/kramdown_suite/main.rs. A case on each line, with an optional
-# reason. UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
-# rewrites it.
+# The suite's cases pulldown-kram reads differently, kramdown's and the
+# additions, checked by tests/kramdown_suite/main.rs. A case on each
+# line, with an optional reason. UPDATE_KRAMDOWN_SUITE=1 cargo test
+# --test kramdown_suite rewrites it.
 block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
 block/04_header/atx_header # headers interrupting paragraphs; empty atx headers
 block/04_header/setext_header # setext underline after indented code and lists
@@ -60,3 +60,13 @@ span/extension/options # options extension
 span/math/normal # \$ escapes before $$ math kept or read differently
 span/text_substitutions/typography # guillemets; << read as an HTML tag
 span/text_substitutions/typography_subst # guillemets from << and >> read as text or HTML
+additions/block/html_blank_line # HTML blocks end at a blank line, as CommonMark ends them, not at the end tag
+additions/block/list_fence_indent # a fence's indent past a list item's content stripped from its lines, kramdown keeps it
+additions/block/list_lazy_fence # unindented fence after a list item's text ends the list; kramdown keeps it in the item, without the item's indent
+additions/block/math_after_block # $$ block after a fence or header with no blank line between, kramdown reads inline math in a paragraph
+additions/block/span_tag_alone # a line of only a span tag with a blank line after it is an HTML block, kramdown makes it a paragraph
+additions/span/autolink_mailto # <mailto:…> autolink text keeps the mailto:
+additions/span/emphasis_in_emphasis # emphasis inside the same emphasis
+additions/span/image_alt # image alt text with its markup read and quotes made typographic, kramdown takes it as written
+additions/span/link_text_brackets # link text with brackets
+additions/span/strong_emphasis # ***a*** nesting order

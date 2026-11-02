@@ -1,19 +1,25 @@
-# Regenerates the expected HTML of kramdown's own test cases, as kramdown
-# reads them the way Jekyll runs it, for tests/kramdown_suite/main.rs.
+# Regenerates the expected HTML of the suite's cases, kramdown's own test
+# cases and pulldown-kram's additions, as kramdown reads them the way Jekyll
+# runs it, for tests/kramdown_suite/main.rs.
 #
 #     ruby tests/kramdown_suite/generate.rb
 #
 # The inputs in testcases/ are the `.text` files of kramdown 2.5.2's
 # test/testcases, with their `.options` files and the directory-level
 # `options` file, copied unchanged. kramdown is MIT licensed; its notice is
-# in COPYING here.
+# in COPYING here. Each case is named by its path under testcases/.
+#
+# The inputs in additions/ are pulldown-kram's own, for what kramdown's
+# cases don't cover, each named by its path with `additions/` before it.
 #
 # Each case is converted with kramdown 2.5.2 and kramdown-parser-gfm 1.1.0
 # to `<case>.html`, beside its `.text`, with these options:
 #
 # 1. The case's options, as kramdown's runner (test/test_files.rb) finds
 #    them: the case's `.options` file, or else an `options` file in its
-#    directory, or else `{auto_ids: false, footnote_nr: 1}`.
+#    directory, or else, for kramdown's cases,
+#    `{auto_ids: false, footnote_nr: 1}`, as its runner gives, and for the
+#    additions none, as Jekyll gives.
 # 2. With kramdown's default for each option pulldown-kram doesn't
 #    support, in UNSUPPORTED below, in place of the case's own.
 # 3. Merged over those, always:
@@ -91,15 +97,25 @@ UNSUPPORTED = {
 FORCED = { input: 'GFM', hard_wrap: false, syntax_highlighter: nil }.freeze
 DEFAULT = { auto_ids: false, footnote_nr: 1 }.freeze
 
-root = File.join(__dir__, 'testcases')
-cases = Dir[File.join(root, '**', '*.text')].sort
-manifest = cases.map do |text_file|
+# Where each source's cases are, the prefix of their names, and the options
+# for a case giving none.
+SOURCES = [
+  ['testcases', '', DEFAULT],
+  ['additions', 'additions/', {}],
+].freeze
+
+cases = SOURCES.flat_map do |dir, prefix, default|
+  root = File.join(__dir__, dir)
+  Dir[File.join(root, '**', '*.text')].sort.map do |text_file|
+    [text_file, prefix + text_file.delete_prefix("#{root}/").delete_suffix('.text'), default]
+  end
+end
+manifest = cases.map do |text_file, name, default|
   options_file = text_file.sub(/\.text\z/, '.options')
   options_file = File.join(File.dirname(text_file), 'options') unless File.exist?(options_file)
-  options = File.exist?(options_file) ? YAML.load(File.read(options_file)) : DEFAULT
+  options = File.exist?(options_file) ? YAML.load(File.read(options_file)) : default
   options = options.transform_keys(&:to_sym)
 
-  name = text_file.delete_prefix("#{root}/").delete_suffix('.text')
   unknown = options.keys - EXTENSIONS.keys - KEPT.keys - UNSUPPORTED.keys
   abort "#{name}: put #{unknown.join(', ')} in a table in #{__FILE__}" unless unknown.empty?
   # An option given its default already is the same either way, so isn't
