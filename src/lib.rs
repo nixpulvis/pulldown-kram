@@ -155,7 +155,8 @@
 //! - [x] Header ids, made the way kramdown's GFM parser, Jekyll's default,
 //!   makes them, from the heading's text without its markup.
 //! - [x] `{:toc}` tables of contents, nested by level, leaving out headings
-//!   with the class `no_toc`, and links inside headings.
+//!   with the class `no_toc`, and links inside headings. With no headings
+//!   to list, the marked list is dropped.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations)]

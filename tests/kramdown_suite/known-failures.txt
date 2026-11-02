@@ -70,7 +70,6 @@ block/14_table/simple # tables without a header row
 block/14_table/table_with_footnote # tables without a header row
 block/15_math/gh_128 # math keeps the whitespace around it
 block/15_math/normal # math keeps the whitespace around it; math blocks with an end-of-block marker
-block/16_toc/no_toc # empty table of contents kept as an empty list
 encoding # tables without a header row; markdown="1" left in the HTML
 man/example # list item paragraphs; definition list attribute lists; tables without a header row
 span/01_link/image_in_a # image markup inside image alt text

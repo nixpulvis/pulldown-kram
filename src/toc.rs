@@ -94,8 +94,12 @@ impl<'a> Toc<'a> {
         out
     }
 
-    /// The number of items in each table of contents.
+    /// The number of items in each table of contents, none if there are no
+    /// headings to list.
     fn size(&self) -> usize {
+        if self.entries.is_empty() {
+            return 0;
+        }
         2 + (0..self.entries.len())
             .map(|i| {
                 4 + self.entries[i].content.len() + if self.children[i].is_empty() { 0 } else { 2 }
@@ -128,11 +132,15 @@ impl<'a> Toc<'a> {
         }
     }
 
-    /// Writes the table of contents standing in for the list `list` starts.
+    /// Writes the table of contents standing in for the list `list` starts,
+    /// or nothing, as kramdown does, if there are no headings to list.
     fn write_list(&self, list: &Item<'a>, out: &mut Vec<Item<'a>>) {
         let Event::Start(Tag::List(start)) = list.event else {
             return;
         };
+        if self.roots.is_empty() {
+            return;
+        }
         out.push(Item {
             lists: list.lists.clone(),
             ..Item::new(Event::Start(Tag::List(start)), list.range.clone())
@@ -271,9 +279,9 @@ mod tests {
             Extensions::all() - Extensions::ENABLE_AUTO_IDS,
         );
         assert_eq!(outline(&items), "<ul><li><a #b>B</a></li></ul>");
-        // With no headings, the list is left empty.
-        let items = toc("* x\n{:toc}\n", Extensions::all());
-        assert_eq!(outline(&items), "<ul></ul>");
+        // With no headings, there's no table, nor the list.
+        let items = toc("* x\n{:toc}\n\np\n", Extensions::all());
+        assert_eq!(outline(&items), "<p>p</p>");
     }
 
     #[test]

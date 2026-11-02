@@ -21,3 +21,5 @@ The first release.
 - An attribute list with a word like `#aé` no longer panics.
 - The tags of extensions kramdown doesn't have, like `{::something}`, stay
   text, as in kramdown, rather than being dropped.
+- A list marked `{:toc}` is dropped when there are no headings to list,
+  as in kramdown, rather than left an empty list.
