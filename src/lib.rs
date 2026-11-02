@@ -27,6 +27,9 @@
 //! renders pulldown-cmark's events renders these too, and can pick up the
 //! attributes where it wants them.
 //!
+//! For HTML, [`html::push_html`] writes the events out the way kramdown
+//! writes the same elements, attributes included.
+//!
 //! For CommonMark text rather than events, write the events back out with
 //! [pulldown-cmark-to-cmark]. The attributes are lost, as CommonMark has no
 //! way to write them.
@@ -158,6 +161,7 @@
 mod attributes;
 mod definitions;
 mod headings;
+pub mod html;
 mod options;
 mod read;
 mod source;

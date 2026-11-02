@@ -1,105 +1,18 @@
 //! Documents read as kramdown 2.5.2 reads them with GFM input, Jekyll's
 //! default. Each case reads a document twice: with one extension, and the
 //! few it builds on, to show what that extension does, and with every
-//! extension but it, to show what's left without it. The outlines are cut
-//! down to the elements and attributes the events carry. With the extension,
-//! they match kramdown's HTML for the same input, less what the extensions
-//! left off would add, like header ids.
+//! extension but it, to show what's left without it. Each is written out
+//! with `pulldown_kram::html`, as kramdown writes HTML. With the extension,
+//! it's kramdown's HTML for the same input, less what the extensions left
+//! off would add, like header ids.
 
-use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
-use pulldown_kram::{Attributes, Document, Extensions, Options};
+use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Tag};
+use pulldown_kram::{Document, Extensions, Options, html};
 
-/// The document's events as HTML-like text, attributes included.
-fn outline(markdown: &str, options: impl Into<Options>) -> String {
-    let document = Document::new(markdown, options);
+/// The document as HTML.
+fn html(markdown: &str, options: impl Into<Options>) -> String {
     let mut out = String::new();
-    for (event, attributes) in document.events() {
-        match event {
-            Event::Start(tag) => {
-                let (name, extra) = match tag {
-                    Tag::Paragraph => ("p", String::new()),
-                    Tag::Heading { level, id, .. } => (
-                        ["h1", "h2", "h3", "h4", "h5", "h6"][level as usize - 1],
-                        format!(" id=\"{}\"", id.as_deref().unwrap_or("")),
-                    ),
-                    Tag::BlockQuote(_) => ("blockquote", String::new()),
-                    Tag::CodeBlock(CodeBlockKind::Fenced(lang)) if !lang.is_empty() => {
-                        ("pre", format!(" lang=\"{lang}\""))
-                    }
-                    Tag::CodeBlock(_) => ("pre", String::new()),
-                    Tag::List(None) => ("ul", String::new()),
-                    Tag::List(Some(_)) => ("ol", String::new()),
-                    Tag::Item => ("li", String::new()),
-                    Tag::Emphasis => ("em", String::new()),
-                    Tag::Strong => ("strong", String::new()),
-                    Tag::Strikethrough => ("del", String::new()),
-                    Tag::Link { dest_url, .. } => ("a", format!(" href=\"{dest_url}\"")),
-                    Tag::FootnoteDefinition(label) => ("footnote", format!(" label=\"{label}\"")),
-                    Tag::HtmlBlock => ("html", String::new()),
-                    Tag::Table(_) => ("table", String::new()),
-                    Tag::TableHead => ("thead", String::new()),
-                    Tag::TableRow => ("tr", String::new()),
-                    Tag::TableCell => ("td", String::new()),
-                    Tag::DefinitionList => ("dl", String::new()),
-                    Tag::DefinitionListTitle => ("dt", String::new()),
-                    Tag::DefinitionListDefinition => ("dd", String::new()),
-                    tag => panic!("unexpected {tag:?}"),
-                };
-                out.push_str(&format!("<{name}{extra}{}>", attrs(&attributes)));
-            }
-            Event::End(tag) => out.push_str(match tag {
-                TagEnd::Paragraph => "</p>",
-                TagEnd::Heading(level) => {
-                    ["</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>"][level as usize - 1]
-                }
-                TagEnd::BlockQuote(_) => "</blockquote>",
-                TagEnd::CodeBlock => "</pre>",
-                TagEnd::List(false) => "</ul>",
-                TagEnd::List(true) => "</ol>",
-                TagEnd::Item => "</li>",
-                TagEnd::Emphasis => "</em>",
-                TagEnd::Strong => "</strong>",
-                TagEnd::Strikethrough => "</del>",
-                TagEnd::FootnoteDefinition => "</footnote>",
-                TagEnd::Link => "</a>",
-                TagEnd::HtmlBlock => "</html>",
-                TagEnd::Table => "</table>",
-                TagEnd::TableHead => "</thead>",
-                TagEnd::TableRow => "</tr>",
-                TagEnd::TableCell => "</td>",
-                TagEnd::DefinitionList => "</dl>",
-                TagEnd::DefinitionListTitle => "</dt>",
-                TagEnd::DefinitionListDefinition => "</dd>",
-                tag => panic!("unexpected {tag:?}"),
-            }),
-            Event::Text(text) => out.push_str(&text),
-            Event::Code(code) => {
-                out.push_str(&format!("<code{}>{code}</code>", attrs(&attributes)))
-            }
-            Event::Html(html) | Event::InlineHtml(html) => out.push_str(&html),
-            Event::TaskListMarker(done) => out.push_str(if done { "[x]" } else { "[ ]" }),
-            Event::InlineMath(math) => out.push_str(&format!("\\({math}\\)")),
-            Event::DisplayMath(math) => out.push_str(&format!("\\[{}\\]", math.trim())),
-            Event::SoftBreak => out.push('\n'),
-            Event::Rule => out.push_str(&format!("<hr{}>", attrs(&attributes))),
-            Event::FootnoteReference(label) => out.push_str(&format!("[^{label}]")),
-            event => panic!("unexpected {event:?}"),
-        }
-    }
-    out
-}
-
-fn attrs(attributes: &Attributes) -> String {
-    let mut out = String::new();
-    if !attributes.classes.is_empty() {
-        out.push_str(&format!(" class=\"{}\"", attributes.classes.join(" ")));
-    }
-    if let Some(id) = &attributes.id {
-        out.push_str(&format!(" id=\"{id}\""));
-    }
-    for (key, value) in &attributes.pairs {
-        out.push_str(&format!(" {key}=\"{value}\""));
-    }
+    html::push_html(&mut out, Document::new(markdown, options).events());
     out
 }
 
@@ -130,8 +43,8 @@ impl Extension {
     /// what it needs, and as `without` given every extension but this one.
     #[track_caller]
     fn reads(self, markdown: &str, with: &str, without: &str) {
-        let only = outline(markdown, self.extension | self.needs);
-        let rest = outline(markdown, Extensions::all() - self.extension);
+        let only = html(markdown, self.extension | self.needs);
+        let rest = html(markdown, Extensions::all() - self.extension);
         assert_eq!(only, with, "with the extension");
         assert_eq!(rest, without, "without the extension");
     }
@@ -142,8 +55,8 @@ fn tables() {
     let extension = Extension::new(Extensions::ENABLE_TABLES);
     extension.reads(
         "a | b\n-|-\n1 | 2\n",
-        "<table><thead><td>a</td><td>b</td></thead><tr><td>1</td><td>2</td></tr></table>",
-        "<p>a | b\n-|-\n1 | 2</p>",
+        "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>1</td><td>2</td></tr>\n</tbody></table>\n",
+        "<p>a | b\n-|-\n1 | 2</p>\n",
     );
 }
 
@@ -152,20 +65,20 @@ fn footnotes() {
     let extension = Extension::new(Extensions::ENABLE_FOOTNOTES);
     extension.reads(
         "a[^1]\n\n[^1]: b\n",
-        "<p>a[^1]</p><footnote label=\"1\"><p>b</p></footnote>",
-        "<p>a<a href=\"b\">^1</a></p>",
+        "<p>a<sup id=\"fnref:1\"><a href=\"#fn:1\" class=\"footnote\" rel=\"footnote\" role=\"doc-noteref\">1</a></sup></p>\n<div class=\"footnotes\" role=\"doc-endnotes\">\n<ol>\n<li id=\"fn:1\">\n<p>b\u{a0}<a href=\"#fnref:1\" class=\"reversefootnote\" role=\"doc-backlink\">↩</a></p>\n</li>\n</ol>\n</div>\n",
+        "<p>a<a href=\"b\">^1</a></p>\n",
     );
 }
 
 #[test]
 fn strikethrough() {
     let extension = Extension::new(Extensions::ENABLE_STRIKETHROUGH);
-    extension.reads("~~a~~\n", "<p><del>a</del></p>", "<p>~~a~~</p>");
+    extension.reads("~~a~~\n", "<p><del>a</del></p>\n", "<p>~~a~~</p>\n");
     // A single tilde is text, as in kramdown.
     extension.reads(
         "~a~ and ~~b ~c~ d~~\n",
-        "<p>~a~ and <del>b ~c~ d</del></p>",
-        "<p>~a~ and ~~b ~c~ d~~</p>",
+        "<p>~a~ and <del>b ~c~ d</del></p>\n",
+        "<p>~a~ and ~~b ~c~ d~~</p>\n",
     );
 }
 
@@ -174,8 +87,8 @@ fn task_lists() {
     let extension = Extension::new(Extensions::ENABLE_TASK_LISTS);
     extension.reads(
         "* [x] a\n* [ ] b\n",
-        "<ul><li>[x]a</li><li>[ ]b</li></ul>",
-        "<ul><li>[x] a</li><li>[ ] b</li></ul>",
+        "<ul><li><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" checked=\"checked\" />a</li>\n<li><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" />b</li>\n</ul>\n",
+        "<ul><li>[x] a</li>\n<li>[ ] b</li>\n</ul>\n",
     );
 }
 
@@ -185,13 +98,13 @@ fn typography() {
     // Header ids leave out dashes, as kramdown's do.
     extension.needs(Extensions::ENABLE_AUTO_IDS).reads(
         "# a -- b\n",
-        "<h1 id=\"a--b\">a – b</h1>",
-        "<h1 id=\"a----b\">a -- b</h1>",
+        "<h1 id=\"a--b\">a – b</h1>\n",
+        "<h1 id=\"a----b\">a -- b</h1>\n",
     );
     extension.needs(Extensions::ENABLE_AUTO_IDS).reads(
         "## Two \"quoted\" -- dash...\n",
-        "<h2 id=\"two-quoted--dash\">Two “quoted” – dash…</h2>",
-        "<h2 id=\"two-quoted----dash\">Two \"quoted\" -- dash...</h2>",
+        "<h2 id=\"two-quoted--dash\">Two “quoted” – dash…</h2>\n",
+        "<h2 id=\"two-quoted----dash\">Two &quot;quoted&quot; -- dash...</h2>\n",
     );
 }
 
@@ -201,13 +114,13 @@ fn definition_lists() {
     // A term on each line, and a definition's first paragraph bare unless a blank line comes before it.
     extension.reads(
         "apple\n: red\n\n  more of red\n\npear\nquince\n: fruit\n\n: after\n",
-        "<dl><dt>apple</dt><dd>red<p>more of red</p></dd><dt>pear</dt><dt>quince</dt><dd>fruit</dd><dd><p>after</p></dd></dl>",
-        "<p>apple\n: red</p><p>more of red</p><p>pear\nquince\n: fruit</p><p>: after</p>",
+        "<dl><dt>apple</dt>\n<dd>red<p>more of red</p>\n</dd>\n<dt>pear</dt>\n<dt>quince</dt>\n<dd>fruit</dd>\n<dd><p>after</p>\n</dd>\n</dl>\n",
+        "<p>apple\n: red</p>\n<p>more of red</p>\n<p>pear\nquince\n: fruit</p>\n<p>: after</p>\n",
     );
     extension.reads(
         "> a\n> : b\n>\n> : c\n",
-        "<blockquote><dl><dt>a</dt><dd>b</dd><dd><p>c</p></dd></dl></blockquote>",
-        "<blockquote><p>a\n: b</p><p>: c</p></blockquote>",
+        "<blockquote><dl><dt>a</dt>\n<dd>b</dd>\n<dd><p>c</p>\n</dd>\n</dl>\n</blockquote>\n",
+        "<blockquote><p>a\n: b</p>\n<p>: c</p>\n</blockquote>\n",
     );
 }
 
@@ -217,14 +130,14 @@ fn math() {
     // A single `$` is text, and `$$` with more in its paragraph is inline.
     extension.reads(
         "Costs $5, or $x$ or $$y$$.\n",
-        "<p>Costs $5, or $x$ or \\(y\\).</p>",
-        "<p>Costs $5, or $x$ or $$y$$.</p>",
+        "<p>Costs $5, or $x$ or \\(y\\).</p>\n",
+        "<p>Costs $5, or $x$ or $$y$$.</p>\n",
     );
-    // kramdown's math block isn't in a paragraph, but pulldown-cmark's is.
+    // Alone in its paragraph, it's a block, which kramdown writes bare.
     extension.reads(
         "$$\nx = 1\n$$\n",
-        "<p>\\[x = 1\\]</p>",
-        "<p>$$\nx = 1\n$$</p>",
+        "\\[\nx = 1\n\\]\n",
+        "<p>$$\nx = 1\n$$</p>\n",
     );
 }
 
@@ -234,88 +147,100 @@ fn block_attributes() {
     // On the line after a block or before it.
     extension.reads(
         "para\n{:.x}\n",
-        "<p class=\"x\">para</p>",
-        "<p>para\n{:.x}</p>",
+        "<p class=\"x\">para</p>\n",
+        "<p>para\n{:.x}</p>\n",
     );
     extension.reads(
         "{:.x}\npara\n",
-        "<p class=\"x\">para</p>",
-        "<p>{:.x}\npara</p>",
+        "<p class=\"x\">para</p>\n",
+        "<p>{:.x}\npara</p>\n",
     );
     extension.reads(
         "## Notes\n{:.no_toc}\n\ntext\n",
-        "<h2 id=\"\" class=\"no_toc\">Notes</h2><p>text</p>",
-        "<h2 id=\"notes\">Notes</h2><p>{:.no_toc}</p><p>text</p>",
+        "<h2 class=\"no_toc\">Notes</h2>\n<p>text</p>\n",
+        "<h2 id=\"notes\">Notes</h2>\n<p>{:.no_toc}</p>\n<p>text</p>\n",
     );
-    extension.reads("---\n{:.x}\n", "<hr class=\"x\">", "<hr><p>{:.x}</p>");
+    extension.reads(
+        "---\n{:.x}\n",
+        "<hr class=\"x\" />\n",
+        "<hr />\n<p>{:.x}</p>\n",
+    );
     // After blocks already read, and before more.
     extension.reads(
         "a\n\n> b\n\nc\n{:.x}\n\nd\n",
-        "<p>a</p><blockquote><p>b</p></blockquote><p class=\"x\">c</p><p>d</p>",
-        "<p>a</p><blockquote><p>b</p></blockquote><p>c\n{:.x}</p><p>d</p>",
+        "<p>a</p>\n<blockquote><p>b</p>\n</blockquote>\n<p class=\"x\">c</p>\n<p>d</p>\n",
+        "<p>a</p>\n<blockquote><p>b</p>\n</blockquote>\n<p>c\n{:.x}</p>\n<p>d</p>\n",
     );
     // Alone between blocks, for the next one.
     extension.reads(
         "para\n\n{:.x}\n\nafter\n",
-        "<p>para</p><p class=\"x\">after</p>",
-        "<p>para</p><p>{:.x}</p><p>after</p>",
+        "<p>para</p>\n<p class=\"x\">after</p>\n",
+        "<p>para</p>\n<p>{:.x}</p>\n<p>after</p>\n",
     );
     extension.reads(
         "para\n\n{:.x}\n\n## H\n",
-        "<p>para</p><h2 id=\"\" class=\"x\">H</h2>",
-        "<p>para</p><p>{:.x}</p><h2 id=\"h\">H</h2>",
+        "<p>para</p>\n<h2 class=\"x\">H</h2>\n",
+        "<p>para</p>\n<p>{:.x}</p>\n<h2 id=\"h\">H</h2>\n",
     );
-    extension.reads("para\n\n{:.x}\n", "<p>para</p>", "<p>para</p><p>{:.x}</p>");
+    extension.reads(
+        "para\n\n{:.x}\n",
+        "<p>para</p>\n",
+        "<p>para</p>\n<p>{:.x}</p>\n",
+    );
     extension.reads(
         "a\n\nb\n\n{:.x}\n\n{:.y}\n\nc\n",
-        "<p>a</p><p>b</p><p class=\"x y\">c</p>",
-        "<p>a</p><p>b</p><p>{:.x}</p><p>{:.y}</p><p>c</p>",
+        "<p>a</p>\n<p>b</p>\n<p class=\"x y\">c</p>\n",
+        "<p>a</p>\n<p>b</p>\n<p>{:.x}</p>\n<p>{:.y}</p>\n<p>c</p>\n",
     );
     // Ending a paragraph.
     extension.reads(
         "para\n{:.x}\nmore\n",
-        "<p class=\"x\">para</p><p>more</p>",
-        "<p>para\n{:.x}\nmore</p>",
+        "<p class=\"x\">para</p>\n<p>more</p>\n",
+        "<p>para\n{:.x}\nmore</p>\n",
     );
     extension.reads(
         "para\n{:.x}\n{:.y}\nmore *a*\n",
-        "<p class=\"x y\">para</p><p>more <em>a</em></p>",
-        "<p>para\n{:.x}\n{:.y}\nmore <em>a</em></p>",
+        "<p class=\"x y\">para</p>\n<p>more <em>a</em></p>\n",
+        "<p>para\n{:.x}\n{:.y}\nmore <em>a</em></p>\n",
     );
     // Lazy, for the outermost container.
     extension.reads(
         "> q\n{:.x}\n",
-        "<blockquote class=\"x\"><p>q</p></blockquote>",
-        "<blockquote><p>q\n{:.x}</p></blockquote>",
+        "<blockquote class=\"x\"><p>q</p>\n</blockquote>\n",
+        "<blockquote><p>q\n{:.x}</p>\n</blockquote>\n",
     );
     extension.reads(
         "> > q\n{:.x}\n",
-        "<blockquote class=\"x\"><blockquote><p>q</p></blockquote></blockquote>",
-        "<blockquote><blockquote><p>q\n{:.x}</p></blockquote></blockquote>",
+        "<blockquote class=\"x\"><blockquote><p>q</p>\n</blockquote>\n</blockquote>\n",
+        "<blockquote><blockquote><p>q\n{:.x}</p>\n</blockquote>\n</blockquote>\n",
     );
     extension.reads(
         "- a\n\n  b\n{:.x}\n",
-        "<ul class=\"x\"><li><p>a</p><p>b</p></li></ul>",
-        "<ul><li><p>a</p><p>b\n{:.x}</p></li></ul>",
+        "<ul class=\"x\"><li><p>a</p>\n<p>b</p>\n</li>\n</ul>\n",
+        "<ul><li><p>a</p>\n<p>b\n{:.x}</p>\n</li>\n</ul>\n",
     );
     // Touching nothing, or in code, they're text.
-    extension.reads("para {: .x}\n", "<p>para {: .x}</p>", "<p>para {: .x}</p>");
+    extension.reads(
+        "para {: .x}\n",
+        "<p>para {: .x}</p>\n",
+        "<p>para {: .x}</p>\n",
+    );
     extension.reads(
         "```\n{:.x}\n```\n",
-        "<pre>{:.x}\n</pre>",
-        "<pre>{:.x}\n</pre>",
+        "<pre><code>{:.x}\n</code></pre>\n",
+        "<pre><code>{:.x}\n</code></pre>\n",
     );
     // After a table, for it.
     extension.needs(Extensions::ENABLE_TABLES).reads(
         "a | b\n--|--\n1 | 2\n{:.x}\n",
-        "<table class=\"x\"><thead><td>a</td><td>b</td></thead><tr><td>1</td><td>2</td></tr></table>",
-        "<table><thead><td>a</td><td>b</td></thead><tr><td>1</td><td>2</td></tr><tr><td>{:.x}</td><td></td></tr></table>",
+        "<table class=\"x\"><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>1</td><td>2</td></tr>\n</tbody></table>\n",
+        "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>1</td><td>2</td></tr>\n<tr><td>{:.x}</td><td></td></tr>\n</tbody></table>\n",
     );
     // Beside other cells, text.
     extension.needs(Extensions::ENABLE_TABLES).reads(
         "a | b\n--|--\n{:.x} | 2\n",
-        "<table><thead><td>a</td><td>b</td></thead><tr><td>{:.x}</td><td>2</td></tr></table>",
-        "<table><thead><td>a</td><td>b</td></thead><tr><td>{:.x}</td><td>2</td></tr></table>",
+        "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>{:.x}</td><td>2</td></tr>\n</tbody></table>\n",
+        "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>{:.x}</td><td>2</td></tr>\n</tbody></table>\n",
     );
 }
 
@@ -324,26 +249,26 @@ fn span_attributes() {
     let extension = Extension::new(Extensions::ENABLE_SPAN_ATTRIBUTES);
     extension.reads(
         "`x`{:.hl} and *e*{: #i k=\"v w\"}\n",
-        "<p><code class=\"hl\">x</code> and <em id=\"i\" k=\"v w\">e</em></p>",
-        "<p><code>x</code>{:.hl} and <em>e</em>{: #i k=“v w”}</p>",
+        "<p><code class=\"hl\">x</code> and <em id=\"i\" k=\"v w\">e</em></p>\n",
+        "<p><code>x</code>{:.hl} and <em>e</em>{: #i k=“v w”}</p>\n",
     );
     // The empty list separates spans.
     extension.reads(
         "*is italic*{::}*marked*{:.special} text\n",
-        "<p><em>is italic</em><em class=\"special\">marked</em> text</p>",
-        "<p><em>is italic</em>{::}<em>marked</em>{:.special} text</p>",
+        "<p><em>is italic</em><em class=\"special\">marked</em> text</p>\n",
+        "<p><em>is italic</em>{::}<em>marked</em>{:.special} text</p>\n",
     );
     // Not touching the span, they're text.
     extension.reads(
         "`code` {:.x}\n",
-        "<p><code>code</code> {:.x}</p>",
-        "<p><code>code</code> {:.x}</p>",
+        "<p><code>code</code> {:.x}</p>\n",
+        "<p><code>code</code> {:.x}</p>\n",
     );
     // Smart quotes split the text around quoted values.
     extension.needs(Extensions::ENABLE_TYPOGRAPHY).reads(
         "a [link](http://e.com){:hreflang=\"de\"} b\n",
-        "<p>a <a href=\"http://e.com\" hreflang=\"de\">link</a> b</p>",
-        "<p>a <a href=\"http://e.com\">link</a>{:hreflang=“de”} b</p>",
+        "<p>a <a href=\"http://e.com\" hreflang=\"de\">link</a> b</p>\n",
+        "<p>a <a href=\"http://e.com\">link</a>{:hreflang=“de”} b</p>\n",
     );
 }
 
@@ -352,8 +277,8 @@ fn item_attributes() {
     let extension = Extension::new(Extensions::ENABLE_ITEM_ATTRIBUTES);
     extension.reads(
         "* {:.cls} item\n* b\n",
-        "<ul><li class=\"cls\">item</li><li>b</li></ul>",
-        "<ul><li>{:.cls} item</li><li>b</li></ul>",
+        "<ul><li class=\"cls\">item</li>\n<li>b</li>\n</ul>\n",
+        "<ul><li>{:.cls} item</li>\n<li>b</li>\n</ul>\n",
     );
 }
 
@@ -362,31 +287,31 @@ fn header_ids() {
     let extension = Extension::new(Extensions::ENABLE_HEADER_IDS);
     extension.reads(
         "# A {#b}\n",
-        "<h1 id=\"b\">A</h1>",
-        "<h1 id=\"a-b\">A {#b}</h1>",
+        "<h1 id=\"b\">A</h1>\n",
+        "<h1 id=\"a-b\">A {#b}</h1>\n",
     );
     extension.reads(
         "# Hello #    {#custom}\n",
-        "<h1 id=\"custom\">Hello</h1>",
-        "<h1 id=\"hello-----custom\">Hello #    {#custom}</h1>",
+        "<h1 id=\"custom\">Hello</h1>\n",
+        "<h1 id=\"hello-----custom\">Hello #    {#custom}</h1>\n",
     );
     // An attribute list isn't a header id.
     extension.needs(Extensions::ENABLE_AUTO_IDS).reads(
         "## H {: #id}\n",
-        "<h2 id=\"h--id\">H {: #id}</h2>",
-        "<h2 id=\"h--id\">H {: #id}</h2>",
+        "<h2 id=\"h--id\">H {: #id}</h2>\n",
+        "<h2 id=\"h--id\">H {: #id}</h2>\n",
     );
 }
 
 #[test]
 fn auto_ids() {
     let extension = Extension::new(Extensions::ENABLE_AUTO_IDS);
-    extension.reads("# A\n", "<h1 id=\"a\">A</h1>", "<h1 id=\"\">A</h1>");
+    extension.reads("# A\n", "<h1 id=\"a\">A</h1>\n", "<h1>A</h1>\n");
     // Repeats are numbered, past ids already taken.
     extension.reads(
         "# One 1\n# One\n# One\n",
-        "<h1 id=\"one-1\">One 1</h1><h1 id=\"one\">One</h1><h1 id=\"one-1\">One</h1>",
-        "<h1 id=\"\">One 1</h1><h1 id=\"\">One</h1><h1 id=\"\">One</h1>",
+        "<h1 id=\"one-1\">One 1</h1>\n<h1 id=\"one\">One</h1>\n<h1 id=\"one-1\">One</h1>\n",
+        "<h1>One 1</h1>\n<h1>One</h1>\n<h1>One</h1>\n",
     );
 }
 
@@ -395,28 +320,38 @@ fn markdown_attribute() {
     let extension = Extension::new(Extensions::ENABLE_MARKDOWN_ATTRIBUTE);
     extension.reads(
         "<div markdown=\"1\">\n*a*\n</div>\n",
-        "<html><div markdown=\"1\">\n</html><p><em>a</em></p><html></div>\n</html>",
-        "<html><div markdown=\"1\">\n*a*\n</div>\n</html>",
+        "<div markdown=\"1\">\n<p><em>a</em></p>\n</div>\n",
+        "<div markdown=\"1\">\n*a*\n</div>\n",
     );
 }
 
 #[test]
 fn span_tag_paragraphs() {
     let extension = Extension::new(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS);
-    extension.reads(
-        "<b>\n*a*\n",
-        "<p><b> <em>a</em></p>",
-        "<html><b>\n*a*\n</html>",
-    );
+    extension.reads("<b>\n*a*\n", "<p><b> <em>a</em></p>\n", "<b>\n*a*\n");
 }
 
 #[test]
 fn language_classes() {
-    let extension = Extension::new(Extensions::ENABLE_LANGUAGE_CLASSES);
-    extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES).reads(
-        "~~~\ndef x\n~~~\n{: .language-ruby}\n",
-        "<pre lang=\"ruby\" class=\"language-ruby\">def x\n</pre>",
-        "<pre class=\"language-ruby\">def x\n</pre>",
+    // The HTML is the same either way, as the class goes on the code, so
+    // the extension shows in the event: the fence given the class's language.
+    let markdown = "~~~\ndef x\n~~~\n{: .language-ruby}\n";
+    let language = |extensions: Extensions| match Document::new(markdown, extensions)
+        .events()
+        .next()
+    {
+        Some((Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))), _)) => info.to_string(),
+        event => panic!("unexpected {event:?}"),
+    };
+    let extension = Extensions::ENABLE_LANGUAGE_CLASSES;
+    assert_eq!(
+        language(extension | Extensions::ENABLE_BLOCK_ATTRIBUTES),
+        "ruby"
+    );
+    assert_eq!(language(Extensions::all() - extension), "");
+    assert_eq!(
+        html(markdown, Extensions::all()),
+        "<pre><code class=\"language-ruby\">def x\n</code></pre>\n"
     );
 }
 
@@ -426,20 +361,20 @@ fn tables_of_contents() {
     // Nested by level.
     extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES | Extensions::ENABLE_AUTO_IDS).reads(
         "1. TOC\n{:toc}\n\n## A\n### B\n#### C\n## D\n",
-        "<ol><li><a href=\"#a\">A</a><ol><li><a href=\"#b\">B</a><ol><li><a href=\"#c\">C</a></li></ol></li></ol></li><li><a href=\"#d\">D</a></li></ol><h2 id=\"a\">A</h2><h3 id=\"b\">B</h3><h4 id=\"c\">C</h4><h2 id=\"d\">D</h2>",
-        "<ol><li>TOC</li></ol><h2 id=\"a\">A</h2><h3 id=\"b\">B</h3><h4 id=\"c\">C</h4><h2 id=\"d\">D</h2>",
+        "<ol><li><a href=\"#a\">A</a><ol><li><a href=\"#b\">B</a><ol><li><a href=\"#c\">C</a></li>\n</ol>\n</li>\n</ol>\n</li>\n<li><a href=\"#d\">D</a></li>\n</ol>\n<h2 id=\"a\">A</h2>\n<h3 id=\"b\">B</h3>\n<h4 id=\"c\">C</h4>\n<h2 id=\"d\">D</h2>\n",
+        "<ol><li>TOC</li>\n</ol>\n<h2 id=\"a\">A</h2>\n<h3 id=\"b\">B</h3>\n<h4 id=\"c\">C</h4>\n<h2 id=\"d\">D</h2>\n",
     );
     // Each lists every heading, before it or after.
     extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES | Extensions::ENABLE_AUTO_IDS).reads(
         "* TOC\n{:toc}\n\n# A\n\n* TOC\n{:toc}\n\n# B\n",
-        "<ul><li><a href=\"#a\">A</a></li><li><a href=\"#b\">B</a></li></ul><h1 id=\"a\">A</h1><ul><li><a href=\"#a\">A</a></li><li><a href=\"#b\">B</a></li></ul><h1 id=\"b\">B</h1>",
-        "<ul><li>TOC</li></ul><h1 id=\"a\">A</h1><ul><li>TOC</li></ul><h1 id=\"b\">B</h1>",
+        "<ul><li><a href=\"#a\">A</a></li>\n<li><a href=\"#b\">B</a></li>\n</ul>\n<h1 id=\"a\">A</h1>\n<ul><li><a href=\"#a\">A</a></li>\n<li><a href=\"#b\">B</a></li>\n</ul>\n<h1 id=\"b\">B</h1>\n",
+        "<ul><li>TOC</li>\n</ul>\n<h1 id=\"a\">A</h1>\n<ul><li>TOC</li>\n</ul>\n<h1 id=\"b\">B</h1>\n",
     );
     // Leaving out links, footnotes and headings marked no_toc.
     extension.needs(Extensions::ENABLE_FOOTNOTES | Extensions::ENABLE_BLOCK_ATTRIBUTES | Extensions::ENABLE_HEADER_IDS | Extensions::ENABLE_AUTO_IDS).reads(
         "* TOC\n{:toc}\n\n## See [docs](http://x.com) *now* [^1]\n\n## Two\n{:.no_toc}\n\n# Hello #    {#custom}\n\n[^1]: note\n",
-        "<ul><li><a href=\"#see-docs-now-\">See docs <em>now</em> </a></li><li><a href=\"#custom\">Hello</a></li></ul><h2 id=\"see-docs-now-\">See <a href=\"http://x.com\">docs</a> <em>now</em> [^1]</h2><h2 id=\"two\" class=\"no_toc\">Two</h2><h1 id=\"custom\">Hello</h1><footnote label=\"1\"><p>note</p></footnote>",
-        "<ul><li>TOC</li></ul><h2 id=\"see-docs-now-\">See <a href=\"http://x.com\">docs</a> <em>now</em> [^1]</h2><h2 id=\"two\" class=\"no_toc\">Two</h2><h1 id=\"custom\">Hello</h1><footnote label=\"1\"><p>note</p></footnote>",
+        "<ul><li><a href=\"#see-docs-now-\">See docs <em>now</em> </a></li>\n<li><a href=\"#custom\">Hello</a></li>\n</ul>\n<h2 id=\"see-docs-now-\">See <a href=\"http://x.com\">docs</a> <em>now</em> <sup id=\"fnref:1\"><a href=\"#fn:1\" class=\"footnote\" rel=\"footnote\" role=\"doc-noteref\">1</a></sup></h2>\n<h2 id=\"two\" class=\"no_toc\">Two</h2>\n<h1 id=\"custom\">Hello</h1>\n<div class=\"footnotes\" role=\"doc-endnotes\">\n<ol>\n<li id=\"fn:1\">\n<p>note\u{a0}<a href=\"#fnref:1\" class=\"reversefootnote\" role=\"doc-backlink\">↩</a></p>\n</li>\n</ol>\n</div>\n",
+        "<ul><li>TOC</li>\n</ul>\n<h2 id=\"see-docs-now-\">See <a href=\"http://x.com\">docs</a> <em>now</em> <sup id=\"fnref:1\"><a href=\"#fn:1\" class=\"footnote\" rel=\"footnote\" role=\"doc-noteref\">1</a></sup></h2>\n<h2 id=\"two\" class=\"no_toc\">Two</h2>\n<h1 id=\"custom\">Hello</h1>\n<div class=\"footnotes\" role=\"doc-endnotes\">\n<ol>\n<li id=\"fn:1\">\n<p>note\u{a0}<a href=\"#fnref:1\" class=\"reversefootnote\" role=\"doc-backlink\">↩</a></p>\n</li>\n</ol>\n</div>\n",
     );
 }
 
@@ -452,7 +387,7 @@ fn extensions_own_their_options() {
         Extensions::all() - Extensions::ENABLE_TABLES,
         Cmark::ENABLE_TABLES,
     );
-    assert_eq!(outline("a | b\n-|-\n", options), "<p>a | b\n-|-</p>");
+    assert_eq!(html("a | b\n-|-\n", options), "<p>a | b\n-|-</p>\n");
 
     // The rest are added.
     let options = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
