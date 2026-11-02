@@ -3,7 +3,6 @@
 # reason. UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
 # rewrites it.
 block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
-block/03_paragraph/with_html_to_native # text after a block tag's end on its line stays in the HTML block, not a paragraph
 block/04_header/atx_header # headers interrupting paragraphs; empty atx headers
 block/04_header/setext_header # setext underline after indented code and lists
 block/06_codeblock/error # ~~~~~~ without a closing fence starts a code block
@@ -16,7 +15,7 @@ block/08_list/mixed # tab-indented nesting read as code
 block/08_list/other_first_element # code in an item with nothing on its first line indented by two, not four
 block/08_list/special_cases # nested list after a paragraph in an item
 block/09_html/cdata_section # CDATA kept, kramdown writes its content
-block/09_html/comment # HTML block after a comment line; comment inside a paragraph
+block/09_html/comment # comment on a quote's line starts an HTML block
 block/09_html/content_model/tables # markdown="span" on table cells left as HTML
 block/09_html/html_to_native/list_ol # HTML indented in a list item read as an indented code block
 block/09_html/html_to_native/list_ul # HTML indented in a list item read as an indented code block
@@ -27,7 +26,6 @@ block/09_html/parse_as_raw # <script> inside a paragraph's line starts an HTML b
 block/09_html/parse_as_span # HTML blocks end where CommonMark ends them, not kramdown
 block/09_html/parse_block_html # stray end tag kept as HTML, which kramdown writes as text
 block/09_html/processing_instruction # processing instructions read as HTML blocks
-block/09_html/simple # text after an HTML block's end tag stays in the block, not a paragraph
 block/09_html/xml # XML-namespaced tags not read as HTML
 block/11_ial/nested # block attribute lists on HTML blocks
 block/11_ial/simple # attribute list definitions; block attribute list after a list item

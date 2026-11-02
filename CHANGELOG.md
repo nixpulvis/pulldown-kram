@@ -61,3 +61,7 @@ The first release.
   kramdown leaves raw, like `<kbd>`, `<code>` and `<var>`, out as it is,
   where Markdown and typography were read in it, so
   `<kbd>--help</kbd>` no longer has a dash.
+- `Extensions::ENABLE_HTML_BLOCK_ENDS` ends an HTML block with the end tag
+  of the element starting it, or the end of a comment, as kramdown does,
+  reading the text after it as Markdown, where it was left in the block
+  up to the next blank line.

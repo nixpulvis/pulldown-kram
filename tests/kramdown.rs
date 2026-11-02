@@ -545,6 +545,17 @@ fn raw_html_spans() {
 }
 
 #[test]
+fn html_block_ends() {
+    let extension = Extension::new(Extensions::ENABLE_HTML_BLOCK_ENDS);
+    // At the element's end tag, with Markdown after it.
+    extension.reads(
+        "<div>\na\n</div>\n*b*\n\n<p>c</p> *d*\n",
+        "<div>\na\n</div>\n<p><em>b</em></p>\n<p>c</p>\n<p><em>d</em></p>\n",
+        "<div>\na\n</div>\n*b*\n<p>c</p> *d*\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

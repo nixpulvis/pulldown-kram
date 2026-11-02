@@ -166,6 +166,10 @@ bitflags! {
         /// `<code>` and `<var>`, given out as it is, without Markdown or
         /// typography read in it.
         const ENABLE_RAW_HTML_SPANS = 1 << 22;
+        /// HTML blocks ending with the end tag of the element starting them,
+        /// as kramdown's do, with any text after it read as Markdown, where
+        /// CommonMark's run to the next blank line.
+        const ENABLE_HTML_BLOCK_ENDS = 1 << 23;
     }
 }
 

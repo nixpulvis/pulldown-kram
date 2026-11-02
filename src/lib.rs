@@ -99,7 +99,8 @@
 //! HTML comes through as pulldown-cmark's HTML events, for the program
 //! reading them to make what it will of.
 //!
-//! - [x] HTML blocks, Markdown in them left as HTML.
+//! - [x] HTML blocks, Markdown in them left as HTML, ending with the end
+//!   tag of the element starting them, with Markdown after it.
 //! - [x] `markdown="1"` on a block element, its content read as Markdown
 //!   and the attribute left out.
 //! - [ ] `markdown="block"`, `markdown="span"` and `markdown="0"`. Their
@@ -190,7 +191,8 @@ pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
 use source::{
-    AttributeLines, DefinitionLines, Mark, MarkdownElements, Offsets, SpanTags, StandIns,
+    AttributeLines, DefinitionLines, HtmlBlocks, Mark, MarkdownElements, Offsets, SpanTags,
+    StandIns,
 };
 
 /// Markdown written for kramdown, ready to read.
@@ -235,6 +237,12 @@ impl<'a> Document<'a> {
         };
         if reads(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
             && let (Cow::Owned(separated), edits) = MarkdownElements::separate(&text)
+        {
+            text = Cow::Owned(separated);
+            then(&mut offsets, edits);
+        }
+        if reads(Extensions::ENABLE_HTML_BLOCK_ENDS)
+            && let (Cow::Owned(separated), edits) = HtmlBlocks::separate(&text)
         {
             text = Cow::Owned(separated);
             then(&mut offsets, edits);
