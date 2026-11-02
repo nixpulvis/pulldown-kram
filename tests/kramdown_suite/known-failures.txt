@@ -36,9 +36,9 @@ block/14_table/errors # separator line alone read as a table
 block/14_table/escaping # code span over two lines of a table
 block/14_table/footer # footer separator lines
 block/14_table/header # separator lines in a table body
-block/14_table/simple # empty cells written bare; <code> HTML over a cell's |
+block/14_table/simple # <code> HTML over a cell's |
 encoding # markdown='1', in single quotes, not read
-man/example # separator lines in a table body; empty cells written bare
+man/example # separator lines in a table body
 span/01_link/image_in_a # image markup inside image alt text
 span/01_link/inline # link text with brackets; spaces and parens in inline link URLs
 span/01_link/link_defs # first link definition wins; spaces in link definition URLs

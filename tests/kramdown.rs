@@ -282,7 +282,7 @@ fn block_attributes() {
     extension.needs(Extensions::ENABLE_TABLES).reads(
         "a | b\n--|--\n1 | 2\n{:.x}\n",
         "<table class=\"x\"><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>1</td><td>2</td></tr>\n</tbody></table>\n",
-        "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>1</td><td>2</td></tr>\n<tr><td>{:.x}</td><td></td></tr>\n</tbody></table>\n",
+        "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>1</td><td>2</td></tr>\n<tr><td>{:.x}</td><td>\u{a0}</td></tr>\n</tbody></table>\n",
     );
     // Beside other cells, text.
     extension.needs(Extensions::ENABLE_TABLES).reads(
@@ -563,7 +563,7 @@ fn tables_without_headers() {
     // fewer cells than the header's.
     extension.reads(
         "| a | `b|c` |\n| d |\n\n| e | f |\n|-\n| g | h |\n",
-        "<table><tbody><tr><td>a</td><td><code>b|c</code></td></tr>\n<tr><td>d</td><td></td></tr>\n</tbody></table>\n<table><thead><tr><th>e</th><th>f</th></tr></thead>\n<tbody><tr><td>g</td><td>h</td></tr>\n</tbody></table>\n",
+        "<table><tbody><tr><td>a</td><td><code>b|c</code></td></tr>\n<tr><td>d</td><td>\u{a0}</td></tr>\n</tbody></table>\n<table><thead><tr><th>e</th><th>f</th></tr></thead>\n<tbody><tr><td>g</td><td>h</td></tr>\n</tbody></table>\n",
         "<p>| a | <code>b|c</code> |\n| d |</p>\n<p>| e | f |\n|-\n| g | h |</p>\n",
     );
 }

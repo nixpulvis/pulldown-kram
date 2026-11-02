@@ -69,3 +69,5 @@ The first release.
   header row, like a line of only `| a | b |`, as kramdown does, and keeps
   a `|` in code in a table's cell in it. A header's separator line with
   fewer cells than the header, or `+` between them, now makes a table.
+- `html` writes an empty table cell with a no-break space, as kramdown
+  does.

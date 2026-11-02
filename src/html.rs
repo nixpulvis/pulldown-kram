@@ -15,8 +15,9 @@
 //! definitions are held until then, while everything else is written as it
 //! comes. A math block alone in its paragraph is written as `\[…\]`, inline
 //! math as `\(…\)`, for MathJax to render. Code isn't highlighted: a code
-//! block's language is its class, `language-…`, on its `<code>`. HTML in the
-//! document is written as it is.
+//! block's language is its class, `language-…`, on its `<code>`. An empty
+//! table cell holds a no-break space. HTML in the document is written as
+//! it is.
 //!
 //! What kramdown's converter options change isn't followed, like
 //! `footnote_nr`, nor are its ids for the links of tables of contents.
@@ -323,6 +324,13 @@ impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
                 // Metadata isn't content.
                 Event::Start(Tag::MetadataBlock(_)) => {
                     events.element();
+                }
+                // kramdown writes an empty cell with a no-break space.
+                Event::Start(Tag::TableCell)
+                    if matches!(events.peek(0), Some(Event::End(TagEnd::TableCell))) =>
+                {
+                    self.event(Event::Start(Tag::TableCell), &attributes)?;
+                    self.out.write_char('\u{a0}')?;
                 }
                 event => self.event(event, &attributes)?,
             }
