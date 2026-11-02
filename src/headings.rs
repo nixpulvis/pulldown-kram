@@ -1,4 +1,4 @@
-//! Heading ids, and the tables of contents linking to them.
+//! Heading ids, written after a heading's text or made from it.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -28,21 +28,19 @@ impl HeaderIds {
                 continue;
             }
             let end = Item::end_of(items, i);
-            let heading = items[i].range.start;
+            let mut heading = Heading::new(&mut items[i..end]);
             let explicit = extensions
                 .contains(Extensions::ENABLE_HEADER_IDS)
-                .then(|| explicit_id(&mut items[i + 1..end], text, heading))
+                .then(|| heading.take_explicit_id(text))
                 .flatten();
             // An attribute list's id wins over `{#id}`, coming after it.
-            let id = items[i].lists.attributes.id.clone().or(explicit);
+            let id = heading.start.lists.attributes.id.clone().or(explicit);
             let id = id.or_else(|| {
                 extensions
                     .contains(Extensions::ENABLE_AUTO_IDS)
-                    .then(|| CowStr::from(self.unique(&raw_text(&items[i + 1..end]))))
+                    .then(|| CowStr::from(self.unique(&heading.raw_text())))
             });
-            if let Event::Start(Tag::Heading { id: slot, .. }) = &mut items[i].event {
-                *slot = id;
-            }
+            heading.set_id(id);
             i = end + 1;
         }
     }
@@ -68,59 +66,80 @@ impl HeaderIds {
     }
 }
 
-/// Takes a `{#id}` off the end of a heading's text, along with closing `#`s
-/// before it in an atx heading, returning the id.
-fn explicit_id<'a>(content: &mut [Item<'a>], text: &'a str, heading: usize) -> Option<CowStr<'a>> {
-    let last = content
-        .iter_mut()
-        .rev()
-        .find(|item| matches!(item.event, Event::Text(_)))?;
-    let Event::Text(words) = &last.event else {
-        return None;
-    };
-    let body = words.trim_end().strip_suffix('}')?;
-    let open = body.rfind("{#")?;
-    let id = &body[open + 2..];
-    let valid = id.starts_with(|c: char| c.is_ascii_alphabetic())
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '-'));
-    let before = &body[..open];
-    if !valid || !before.ends_with([' ', '\t']) {
-        return None;
-    }
-    let mut kept = before.trim_end();
-    let unhashed = kept.trim_end_matches('#');
-    let atx = text[heading..].starts_with('#');
-    if atx
-        && unhashed.len() < kept.len()
-        && (unhashed.is_empty() || unhashed.ends_with([' ', '\t']))
-    {
-        kept = unhashed.trim_end();
-    }
-    let id = open + 2..body.len();
-    let source = text.get(last.range.clone()).filter(|s| *s == &**words);
-    let part = |part: Range<usize>| match source {
-        Some(_) => {
-            CowStr::Borrowed(&text[last.range.start + part.start..last.range.start + part.end])
-        }
-        None => CowStr::from(words[part].to_owned()),
-    };
-    let id = part(id);
-    last.event = Event::Text(part(0..kept.len()));
-    Some(id)
+/// A heading's start and what's in it, up to its end.
+struct Heading<'h, 'a> {
+    start: &'h mut Item<'a>,
+    content: &'h mut [Item<'a>],
 }
 
-/// The text kramdown makes a heading's id from: its text, code and math,
-/// without the rest of the markup.
-fn raw_text(content: &[Item<'_>]) -> String {
-    let mut text = String::new();
-    for item in content {
-        if let Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) =
-            &item.event
-        {
-            text.push_str(t);
+impl<'h, 'a> Heading<'h, 'a> {
+    /// The heading `items` hold, from its start to just before its end.
+    fn new(items: &'h mut [Item<'a>]) -> Self {
+        let (start, content) = items.split_first_mut().expect("a heading's start");
+        Self { start, content }
+    }
+
+    fn set_id(&mut self, id: Option<CowStr<'a>>) {
+        if let Event::Start(Tag::Heading { id: slot, .. }) = &mut self.start.event {
+            *slot = id;
         }
     }
-    text
+
+    /// Takes a `{#id}` off the end of the heading's text, read from `text`,
+    /// along with closing `#`s before it in an atx heading, returning the id.
+    fn take_explicit_id(&mut self, text: &'a str) -> Option<CowStr<'a>> {
+        let atx = text[self.start.range.start..].starts_with('#');
+        let last = self
+            .content
+            .iter_mut()
+            .rev()
+            .find(|item| matches!(item.event, Event::Text(_)))?;
+        let Event::Text(words) = &last.event else {
+            return None;
+        };
+        let body = words.trim_end().strip_suffix('}')?;
+        let open = body.rfind("{#")?;
+        let id = &body[open + 2..];
+        let valid = id.starts_with(|c: char| c.is_ascii_alphabetic())
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '-'));
+        let before = &body[..open];
+        if !valid || !before.ends_with([' ', '\t']) {
+            return None;
+        }
+        let mut kept = before.trim_end();
+        let unhashed = kept.trim_end_matches('#');
+        if atx
+            && unhashed.len() < kept.len()
+            && (unhashed.is_empty() || unhashed.ends_with([' ', '\t']))
+        {
+            kept = unhashed.trim_end();
+        }
+        let id = open + 2..body.len();
+        let source = text.get(last.range.clone()).filter(|s| *s == &**words);
+        let part = |part: Range<usize>| match source {
+            Some(_) => {
+                CowStr::Borrowed(&text[last.range.start + part.start..last.range.start + part.end])
+            }
+            None => CowStr::from(words[part].to_owned()),
+        };
+        let id = part(id);
+        last.event = Event::Text(part(0..kept.len()));
+        Some(id)
+    }
+
+    /// The text kramdown makes the heading's id from: its text, code and
+    /// math, without the rest of the markup.
+    fn raw_text(&self) -> String {
+        let mut text = String::new();
+        for item in self.content.iter() {
+            if let Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) =
+                &item.event
+            {
+                text.push_str(t);
+            }
+        }
+        text
+    }
 }

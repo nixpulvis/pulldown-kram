@@ -3,30 +3,10 @@
 
 use std::borrow::Cow;
 
-use crate::Extensions;
-
-/// With `extensions`, Markdown inside `markdown="1"` elements gets the blank
-/// lines CommonMark needs to read it as Markdown, and a line of only a span
-/// tag, like `<img>`, starts a paragraph rather than an HTML block.
-pub(crate) fn prepare(markdown: &str, extensions: Extensions) -> Cow<'_, str> {
-    let markdown = if extensions.contains(Extensions::ENABLE_MARKDOWN_ATTRIBUTE) {
-        MarkdownElements::separate(markdown)
-    } else {
-        Cow::Borrowed(markdown)
-    };
-    if !extensions.contains(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS) {
-        return markdown;
-    }
-    match SpanTags::join(&markdown) {
-        Cow::Owned(out) => Cow::Owned(out),
-        Cow::Borrowed(_) => markdown,
-    }
-}
-
 /// kramdown parses Markdown inside an HTML element marked `markdown="1"`.
 /// CommonMark only does so when blank lines separate the tags from the
 /// Markdown, so this adds them.
-struct MarkdownElements {
+pub(crate) struct MarkdownElements {
     out: String,
     /// The elements still open, innermost last.
     open: Vec<Element>,
@@ -41,7 +21,9 @@ struct Element {
 }
 
 impl MarkdownElements {
-    fn separate(markdown: &str) -> Cow<'_, str> {
+    /// `markdown`, with blank lines around what's inside each
+    /// `markdown="1"` element.
+    pub fn separate(markdown: &str) -> Cow<'_, str> {
         if !markdown.contains("markdown=\"1\"") {
             return Cow::Borrowed(markdown);
         }
@@ -145,7 +127,7 @@ impl<'a> Tag<'a> {
 /// CommonMark starts an HTML block there instead, which runs to the next
 /// blank line and leaves any Markdown in it as text. Joining the next line
 /// onto the tag's makes the same paragraph of it.
-struct SpanTags;
+pub(crate) struct SpanTags;
 
 impl SpanTags {
     /// The span-level elements kramdown keeps in paragraphs.
@@ -156,7 +138,9 @@ impl SpanTags {
         "tt", "var",
     ];
 
-    fn join(markdown: &str) -> Cow<'_, str> {
+    /// `markdown`, with each line of only a span tag joined onto the next
+    /// line, when that's text.
+    pub fn join(markdown: &str) -> Cow<'_, str> {
         let mut out = String::new();
         let mut joined = false;
         let mut fence = Fence::default();
@@ -246,20 +230,20 @@ mod tests {
     fn separates_markdown_from_tags() {
         let src = "<div markdown=\"1\">\n```rust\n</div>\n```\n<div>\n</div>\n</div>\nafter\n";
         assert_eq!(
-            prepare(src, Extensions::all()),
+            MarkdownElements::separate(src),
             "<div markdown=\"1\">\n\n```rust\n</div>\n```\n<div>\n</div>\n\n</div>\nafter\n"
         );
         // Elements closed on their own line, or only alike in their start,
         // don't nest.
         let src = "<p markdown=\"1\">\n<p>x</p>\n<pre>\n</pre>\n</p>\n";
         assert_eq!(
-            prepare(src, Extensions::all()),
+            MarkdownElements::separate(src),
             "<p markdown=\"1\">\n\n<p>x</p>\n<pre>\n</pre>\n\n</p>\n"
         );
         // A fence only closes with as many marks.
         let src = "<div markdown=\"1\">\n````\n```\n</div>\n````\n</div>\n";
         assert_eq!(
-            prepare(src, Extensions::all()),
+            MarkdownElements::separate(src),
             "<div markdown=\"1\">\n\n````\n```\n</div>\n````\n\n</div>\n"
         );
     }
@@ -267,18 +251,15 @@ mod tests {
     #[test]
     fn span_tags_start_paragraphs() {
         assert_eq!(
-            prepare("<img src=\"a\" />\n![b](c)\n", Extensions::all()),
+            SpanTags::join("<img src=\"a\" />\n![b](c)\n"),
             "<img src=\"a\" /> ![b](c)\n"
         );
         assert_eq!(
-            prepare(
-                "<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n",
-                Extensions::all()
-            ),
+            SpanTags::join("<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n"),
             "<span class=\"g\"> ![a](b)\n![c](d)\n</span>\n"
         );
         // Not block elements, tags before a blank line or a fence, or code.
         let src = "<div>\n*a*\n</div>\n\n<img />\n\n<b>\n```\n<b>\nx\n```\n    <b>\n    x\n";
-        assert!(matches!(prepare(src, Extensions::all()), Cow::Borrowed(_)));
+        assert!(matches!(SpanTags::join(src), Cow::Borrowed(_)));
     }
 }

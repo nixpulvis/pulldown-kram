@@ -52,11 +52,22 @@ impl<'a> Attributes<'a> {
     fn set(&mut self, key: &'a str, value: CowStr<'a>) {
         match key {
             "id" => self.id = Some(value),
-            "class" => self.classes = words(value),
+            "class" => self.classes = Self::split_classes(value),
             _ => match self.pairs.iter_mut().find(|(k, _)| *k == key) {
                 Some(pair) => pair.1 = value,
                 None => self.pairs.push((key, value)),
             },
+        }
+    }
+
+    /// The classes in a `class="…"` value.
+    fn split_classes(value: CowStr<'a>) -> Vec<CowStr<'a>> {
+        match value {
+            CowStr::Borrowed(value) => value.split_whitespace().map(CowStr::Borrowed).collect(),
+            value => value
+                .split_whitespace()
+                .map(|word| CowStr::from(word.to_owned()))
+                .collect(),
         }
     }
 }
@@ -77,10 +88,9 @@ impl<'a> Lists<'a> {
     pub fn parse(text: &'a str) -> Option<(Self, usize)> {
         let mut lists = Self::default();
         let mut rest = text;
-        while let Some(inside) = rest.strip_prefix("{:") {
-            let Some(end) = close(inside) else { break };
-            lists.read(&inside[..end]);
-            rest = &inside[end + "}".len()..];
+        while let Some((list, after)) = List::first(rest) {
+            lists.read(list);
+            rest = after;
         }
         let len = text.len() - rest.len();
         (len > 0).then_some((lists, len))
@@ -92,26 +102,17 @@ impl<'a> Lists<'a> {
         self.toc |= other.toc;
     }
 
-    fn read(&mut self, list: &'a str) {
-        if list.starts_with([':', '/']) || is_definition(list) {
+    fn read(&mut self, list: List<'a>) {
+        if list.gives_nothing() {
             return;
         }
-        let mut rest = list.trim_start();
-        while !rest.is_empty() {
-            if let Some((key, value, after)) = pair(rest) {
-                self.attributes.set(key, value);
-                rest = after;
-            } else {
-                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
-                let (word, after) = rest.split_at(end);
-                if word.starts_with(['#', '.']) {
-                    self.ids_and_classes(word);
-                } else if word == "toc" {
-                    self.toc = true;
-                }
-                rest = after;
+        for part in list.parts() {
+            match part {
+                Part::Pair(key, value) => self.attributes.set(key, value),
+                Part::Word(word) if word.starts_with(['#', '.']) => self.ids_and_classes(word),
+                Part::Word("toc") => self.toc = true,
+                Part::Word(_) => {}
             }
-            rest = rest.trim_start();
         }
     }
 
@@ -125,7 +126,7 @@ impl<'a> Lists<'a> {
             let len = match marker {
                 '#' => {
                     let len = name
-                        .find(|c: char| !(is_word(c) || matches!(c, ':' | '-')))
+                        .find(|c: char| !(List::is_word(c) || matches!(c, ':' | '-')))
                         .unwrap_or(name.len());
                     if !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
                         return;
@@ -151,88 +152,113 @@ impl<'a> Lists<'a> {
     }
 }
 
-/// Where the `}` closing a list is, skipping escaped ones, if it's on the
-/// same line.
-fn close(list: &str) -> Option<usize> {
-    let mut escaped = false;
-    for (i, c) in list.char_indices() {
-        match c {
-            '\n' => return None,
-            '}' if !escaped => return Some(i),
-            '\\' => {
-                escaped = !escaped;
-                continue;
+/// The text of one attribute list, between its `{:` and `}`.
+#[derive(Clone, Copy)]
+struct List<'a>(&'a str);
+
+impl<'a> List<'a> {
+    /// The list at the start of `text`, if it starts with one closed on the
+    /// same line, and the text after it. A `}` escaped with `\` doesn't
+    /// close it.
+    fn first(text: &'a str) -> Option<(Self, &'a str)> {
+        let inside = text.strip_prefix("{:")?;
+        let mut escaped = false;
+        for (i, c) in inside.char_indices() {
+            match c {
+                '\n' => return None,
+                '}' if !escaped => return Some((Self(&inside[..i]), &inside[i + 1..])),
+                '\\' => {
+                    escaped = !escaped;
+                    continue;
+                }
+                _ => {}
             }
-            _ => {}
+            escaped = false;
         }
-        escaped = false;
+        None
     }
-    None
-}
 
-/// Whether `list` defines attributes for later, like `{:name: .new}`.
-fn is_definition(list: &str) -> bool {
-    let len = name_len(list);
-    len > 0 && list[len..].starts_with(':')
-}
-
-/// Reads `key="value"` or `key='value'` from the start of `text`, returning
-/// the key, the value without its escapes, and the rest.
-fn pair(text: &str) -> Option<(&str, CowStr<'_>, &str)> {
-    let len = name_len(text);
-    if len == 0 {
-        return None;
+    /// Whether it's an extension tag, `{::name}` or `{:/name}`, or defines
+    /// attributes for later, like `{:name: .new}`.
+    fn gives_nothing(self) -> bool {
+        let len = Self::name_len(self.0);
+        self.0.starts_with([':', '/']) || (len > 0 && self.0[len..].starts_with(':'))
     }
-    let (key, rest) = text.split_at(len);
-    let rest = rest.strip_prefix('=')?;
-    let quote = rest.chars().next().filter(|c| matches!(c, '"' | '\''))?;
-    let rest = &rest[1..];
-    let mut escaped = false;
-    let end = rest.char_indices().find_map(|(i, c)| {
-        let end = c == quote && !escaped;
-        escaped = c == '\\' && !escaped;
-        end.then_some(i)
-    })?;
-    let value = &rest[..end];
-    let value = if value.contains('\\') {
-        let mut unescaped = String::with_capacity(value.len());
-        let mut chars = value.chars().peekable();
-        while let Some(c) = chars.next() {
-            match chars.peek() {
-                Some(&next) if c == '\\' && (next == '}' || next == quote) => {}
-                _ => unescaped.push(c),
+
+    /// Its pairs and words, in order.
+    fn parts(self) -> impl Iterator<Item = Part<'a>> {
+        let mut rest = self.0;
+        std::iter::from_fn(move || {
+            rest = rest.trim_start();
+            if rest.is_empty() {
+                return None;
             }
-        }
-        CowStr::from(unescaped)
-    } else {
-        CowStr::Borrowed(value)
-    };
-    Some((key, value, &rest[end + 1..]))
-}
-
-/// The length of the name at the start of `text`, a word character and then
-/// word characters or dashes.
-fn name_len(text: &str) -> usize {
-    if !text.starts_with(is_word) {
-        return 0;
+            let (part, after) = Part::pair(rest).unwrap_or_else(|| {
+                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+                (Part::Word(&rest[..end]), &rest[end..])
+            });
+            rest = after;
+            Some(part)
+        })
     }
-    text.find(|c: char| !(is_word(c) || c == '-'))
-        .unwrap_or(text.len())
+
+    /// The length of the name at the start of `text`, a word character and
+    /// then word characters or dashes.
+    fn name_len(text: &str) -> usize {
+        if !text.starts_with(Self::is_word) {
+            return 0;
+        }
+        text.find(|c: char| !(Self::is_word(c) || c == '-'))
+            .unwrap_or(text.len())
+    }
+
+    /// Ruby's `\w`, which is ASCII only.
+    fn is_word(c: char) -> bool {
+        c.is_ascii_alphanumeric() || c == '_'
+    }
 }
 
-/// Ruby's `\w`, which is ASCII only.
-fn is_word(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
+/// A part of an attribute list.
+enum Part<'a> {
+    /// `key="value"` or `key='value'`, the value without its escapes.
+    Pair(&'a str, CowStr<'a>),
+    /// Anything else, up to the next whitespace, like `.new` or `toc`.
+    Word(&'a str),
 }
 
-/// The words of a `class="…"` value.
-fn words(value: CowStr<'_>) -> Vec<CowStr<'_>> {
-    match value {
-        CowStr::Borrowed(value) => value.split_whitespace().map(CowStr::Borrowed).collect(),
-        value => value
-            .split_whitespace()
-            .map(|word| CowStr::from(word.to_owned()))
-            .collect(),
+impl<'a> Part<'a> {
+    /// The pair at the start of `text`, if it starts with one, and the text
+    /// after it.
+    fn pair(text: &'a str) -> Option<(Self, &'a str)> {
+        let len = List::name_len(text);
+        if len == 0 {
+            return None;
+        }
+        let (key, rest) = text.split_at(len);
+        let rest = rest.strip_prefix('=')?;
+        let quote = rest.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+        let rest = &rest[1..];
+        let mut escaped = false;
+        let end = rest.char_indices().find_map(|(i, c)| {
+            let end = c == quote && !escaped;
+            escaped = c == '\\' && !escaped;
+            end.then_some(i)
+        })?;
+        let value = &rest[..end];
+        let value = if value.contains('\\') {
+            let mut unescaped = String::with_capacity(value.len());
+            let mut chars = value.chars().peekable();
+            while let Some(c) = chars.next() {
+                match chars.peek() {
+                    Some(&next) if c == '\\' && (next == '}' || next == quote) => {}
+                    _ => unescaped.push(c),
+                }
+            }
+            CowStr::from(unescaped)
+        } else {
+            CowStr::Borrowed(value)
+        };
+        Some((Self::Pair(key, value), &rest[end + 1..]))
     }
 }
 

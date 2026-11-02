@@ -169,6 +169,7 @@ pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
+use source::{MarkdownElements, SpanTags};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -182,10 +183,22 @@ impl<'a> Document<'a> {
     /// for every kramdown extension, or just the [`Extensions`].
     pub fn new(markdown: &'a str, options: impl Into<Options>) -> Self {
         let options = options.into();
-        Self {
-            text: source::prepare(markdown, options.kramdown),
-            options,
+        // Rewrite what CommonMark reads differently, before it's read.
+        let mut text = Cow::Borrowed(markdown);
+        if options
+            .kramdown
+            .contains(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
+        {
+            text = MarkdownElements::separate(markdown);
         }
+        if options
+            .kramdown
+            .contains(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
+            && let Cow::Owned(joined) = SpanTags::join(&text)
+        {
+            text = Cow::Owned(joined);
+        }
+        Self { text, options }
     }
 
     /// The document's events, each with the attributes kramdown gives it.
