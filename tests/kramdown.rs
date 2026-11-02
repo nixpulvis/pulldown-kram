@@ -1,17 +1,16 @@
 //! Documents read as kramdown 2.5.2 reads them with GFM input, Jekyll's
-//! default. Each expected outline is kramdown's HTML for the same input,
-//! cut down to the elements and attributes the events carry.
+//! default. Each case reads a document twice: with one extension, and the
+//! few it builds on, to show what that extension does, and with every
+//! extension but it, to show what's left without it. The outlines are cut
+//! down to the elements and attributes the events carry. With the extension,
+//! they match kramdown's HTML for the same input, less what the extensions
+//! left off would add, like header ids.
 
 use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 use pulldown_kram::{Attributes, Document, Extensions, Options};
 
 /// The document's events as HTML-like text, attributes included.
-fn outline(markdown: &str) -> String {
-    outline_with(markdown, Extensions::all())
-}
-
-/// [`outline`], read with `options`.
-fn outline_with(markdown: &str, options: impl Into<Options>) -> String {
+fn outline(markdown: &str, options: impl Into<Options>) -> String {
     let document = Document::new(markdown, options);
     let mut out = String::new();
     for (event, attributes) in document.events() {
@@ -104,201 +103,343 @@ fn attrs(attributes: &Attributes) -> String {
     out
 }
 
+/// One of kramdown's extensions, and the others a case needs alongside it.
+#[derive(Clone, Copy)]
+struct Extension {
+    extension: Extensions,
+    needs: Extensions,
+}
+
+impl Extension {
+    fn new(extension: Extensions) -> Self {
+        Self {
+            extension,
+            needs: Extensions::empty(),
+        }
+    }
+
+    /// The same extension, read along with `others`.
+    fn needs(self, others: Extensions) -> Self {
+        Self {
+            needs: self.needs | others,
+            ..self
+        }
+    }
+
+    /// Checks that `markdown` reads as `with` given only this extension and
+    /// what it needs, and as `without` given every extension but this one.
+    #[track_caller]
+    fn reads(self, markdown: &str, with: &str, without: &str) {
+        let only = outline(markdown, self.extension | self.needs);
+        let rest = outline(markdown, Extensions::all() - self.extension);
+        assert_eq!(only, with, "with the extension");
+        assert_eq!(rest, without, "without the extension");
+    }
+}
+
 #[test]
-fn block_lists_go_to_the_block_they_touch() {
-    assert_eq!(outline("para\n{:.x}\n"), "<p class=\"x\">para</p>");
-    assert_eq!(outline("{:.x}\npara\n"), "<p class=\"x\">para</p>");
-    assert_eq!(
-        outline("## Notes\n{:.no_toc}\n\ntext\n"),
-        "<h2 id=\"notes\" class=\"no_toc\">Notes</h2><p>text</p>"
-    );
-    assert_eq!(
-        outline("~~~\ndef x\n~~~\n{: .language-ruby}\n"),
-        "<pre lang=\"ruby\" class=\"language-ruby\">def x\n</pre>"
-    );
-    assert_eq!(outline("---\n{:.x}\n"), "<hr class=\"x\">");
-    // After blocks already read, and before more.
-    assert_eq!(
-        outline("a\n\n> b\n\nc\n{:.x}\n\nd\n"),
-        "<p>a</p><blockquote><p>b</p></blockquote><p class=\"x\">c</p><p>d</p>"
+fn tables() {
+    let extension = Extension::new(Extensions::ENABLE_TABLES);
+    extension.reads(
+        "a | b\n-|-\n1 | 2\n",
+        "<table><thead><td>a</td><td>b</td></thead><tr><td>1</td><td>2</td></tr></table>",
+        "<p>a | b\n-|-\n1 | 2</p>",
     );
 }
 
 #[test]
-fn extensions_read_by_pulldown_cmark() {
-    assert_eq!(
-        outline("~~a~~\n\n* [x] b\n"),
-        "<p><del>a</del></p><ul><li>[x]b</li></ul>"
+fn footnotes() {
+    let extension = Extension::new(Extensions::ENABLE_FOOTNOTES);
+    extension.reads(
+        "a[^1]\n\n[^1]: b\n",
+        "<p>a[^1]</p><footnote label=\"1\"><p>b</p></footnote>",
+        "<p>a<a href=\"b\">^1</a></p>",
     );
+}
+
+#[test]
+fn strikethrough() {
+    let extension = Extension::new(Extensions::ENABLE_STRIKETHROUGH);
+    extension.reads("~~a~~\n", "<p><del>a</del></p>", "<p>~~a~~</p>");
+    // A single tilde is text, as in kramdown.
+    extension.reads(
+        "~a~ and ~~b ~c~ d~~\n",
+        "<p>~a~ and <del>b ~c~ d</del></p>",
+        "<p>~a~ and ~~b ~c~ d~~</p>",
+    );
+}
+
+#[test]
+fn task_lists() {
+    let extension = Extension::new(Extensions::ENABLE_TASK_LISTS);
+    extension.reads(
+        "* [x] a\n* [ ] b\n",
+        "<ul><li>[x]a</li><li>[ ]b</li></ul>",
+        "<ul><li>[x] a</li><li>[ ] b</li></ul>",
+    );
+}
+
+#[test]
+fn typography() {
+    let extension = Extension::new(Extensions::ENABLE_TYPOGRAPHY);
     // Header ids leave out dashes, as kramdown's do.
-    assert_eq!(outline("# a -- b\n"), "<h1 id=\"a--b\">a – b</h1>");
-}
-
-#[test]
-fn single_tildes_and_dollars_are_text() {
-    assert_eq!(
-        outline("~a~ and ~~b ~c~ d~~\n"),
-        "<p>~a~ and <del>b ~c~ d</del></p>"
+    extension.needs(Extensions::ENABLE_AUTO_IDS).reads(
+        "# a -- b\n",
+        "<h1 id=\"a--b\">a – b</h1>",
+        "<h1 id=\"a----b\">a -- b</h1>",
     );
-    assert_eq!(
-        outline("Costs $5, or $x$ or $$y$$.\n"),
-        "<p>Costs $5, or $x$ or \\(y\\).</p>"
+    extension.needs(Extensions::ENABLE_AUTO_IDS).reads(
+        "## Two \"quoted\" -- dash...\n",
+        "<h2 id=\"two-quoted--dash\">Two “quoted” – dash…</h2>",
+        "<h2 id=\"two-quoted----dash\">Two \"quoted\" -- dash...</h2>",
     );
-    // kramdown's math block isn't in a paragraph, but pulldown-cmark's is.
-    assert_eq!(outline("$$\nx = 1\n$$\n"), "<p>\\[x = 1\\]</p>");
 }
 
 #[test]
 fn definition_lists() {
-    assert_eq!(
-        outline("apple\n: red\n\n  more of red\n\npear\nquince\n: fruit\n\n: after\n"),
-        "<dl><dt>apple</dt><dd>red<p>more of red</p></dd>\
-        <dt>pear</dt><dt>quince</dt><dd>fruit</dd><dd><p>after</p></dd></dl>"
+    let extension = Extension::new(Extensions::ENABLE_DEFINITION_LISTS);
+    // A term on each line, and a definition's first paragraph bare unless a blank line comes before it.
+    extension.reads(
+        "apple\n: red\n\n  more of red\n\npear\nquince\n: fruit\n\n: after\n",
+        "<dl><dt>apple</dt><dd>red<p>more of red</p></dd><dt>pear</dt><dt>quince</dt><dd>fruit</dd><dd><p>after</p></dd></dl>",
+        "<p>apple\n: red</p><p>more of red</p><p>pear\nquince\n: fruit</p><p>: after</p>",
     );
-    assert_eq!(
-        outline("> a\n> : b\n>\n> : c\n"),
-        "<blockquote><dl><dt>a</dt><dd>b</dd><dd><p>c</p></dd></dl></blockquote>"
-    );
-}
-
-#[test]
-fn block_lists_after_a_table_go_to_it() {
-    let table = "<table class=\"x\"><thead><td>a</td><td>b</td></thead>\
-        <tr><td>1</td><td>2</td></tr></table>";
-    assert_eq!(outline("a | b\n--|--\n1 | 2\n{:.x}\n"), table);
-    // Beside other cells, it's text.
-    assert_eq!(
-        outline("a | b\n--|--\n{:.x} | 2\n"),
-        "<table><thead><td>a</td><td>b</td></thead>\
-        <tr><td>{:.x}</td><td>2</td></tr></table>"
+    extension.reads(
+        "> a\n> : b\n>\n> : c\n",
+        "<blockquote><dl><dt>a</dt><dd>b</dd><dd><p>c</p></dd></dl></blockquote>",
+        "<blockquote><p>a\n: b</p><p>: c</p></blockquote>",
     );
 }
 
 #[test]
-fn block_lists_alone_go_to_the_next_block() {
-    assert_eq!(
-        outline("para\n\n{:.x}\n\nafter\n"),
-        "<p>para</p><p class=\"x\">after</p>"
+fn math() {
+    let extension = Extension::new(Extensions::ENABLE_MATH);
+    // A single `$` is text, and `$$` with more in its paragraph is inline.
+    extension.reads(
+        "Costs $5, or $x$ or $$y$$.\n",
+        "<p>Costs $5, or $x$ or \\(y\\).</p>",
+        "<p>Costs $5, or $x$ or $$y$$.</p>",
     );
-    assert_eq!(
-        outline("para\n\n{:.x}\n\n## H\n"),
-        "<p>para</p><h2 id=\"h\" class=\"x\">H</h2>"
-    );
-    assert_eq!(outline("para\n\n{:.x}\n"), "<p>para</p>");
-    assert_eq!(
-        outline("a\n\nb\n\n{:.x}\n\n{:.y}\n\nc\n"),
-        "<p>a</p><p>b</p><p class=\"x y\">c</p>"
-    );
-}
-
-#[test]
-fn block_lists_end_paragraphs() {
-    assert_eq!(
-        outline("para\n{:.x}\nmore\n"),
-        "<p class=\"x\">para</p><p>more</p>"
-    );
-    assert_eq!(
-        outline("para\n{:.x}\n{:.y}\nmore *a*\n"),
-        "<p class=\"x y\">para</p><p>more <em>a</em></p>"
+    // kramdown's math block isn't in a paragraph, but pulldown-cmark's is.
+    extension.reads(
+        "$$\nx = 1\n$$\n",
+        "<p>\\[x = 1\\]</p>",
+        "<p>$$\nx = 1\n$$</p>",
     );
 }
 
 #[test]
-fn lazy_block_lists_go_to_the_outermost_container() {
-    assert_eq!(
-        outline("> q\n{:.x}\n"),
-        "<blockquote class=\"x\"><p>q</p></blockquote>"
+fn block_attributes() {
+    let extension = Extension::new(Extensions::ENABLE_BLOCK_ATTRIBUTES);
+    // On the line after a block or before it.
+    extension.reads(
+        "para\n{:.x}\n",
+        "<p class=\"x\">para</p>",
+        "<p>para\n{:.x}</p>",
     );
-    assert_eq!(
-        outline("> > q\n{:.x}\n"),
-        "<blockquote class=\"x\"><blockquote><p>q</p></blockquote></blockquote>"
+    extension.reads(
+        "{:.x}\npara\n",
+        "<p class=\"x\">para</p>",
+        "<p>{:.x}\npara</p>",
     );
-    assert_eq!(
-        outline("- a\n\n  b\n{:.x}\n"),
-        "<ul class=\"x\"><li><p>a</p><p>b</p></li></ul>"
+    extension.reads(
+        "## Notes\n{:.no_toc}\n\ntext\n",
+        "<h2 id=\"\" class=\"no_toc\">Notes</h2><p>text</p>",
+        "<h2 id=\"notes\">Notes</h2><p>{:.no_toc}</p><p>text</p>",
+    );
+    extension.reads("---\n{:.x}\n", "<hr class=\"x\">", "<hr><p>{:.x}</p>");
+    // After blocks already read, and before more.
+    extension.reads(
+        "a\n\n> b\n\nc\n{:.x}\n\nd\n",
+        "<p>a</p><blockquote><p>b</p></blockquote><p class=\"x\">c</p><p>d</p>",
+        "<p>a</p><blockquote><p>b</p></blockquote><p>c\n{:.x}</p><p>d</p>",
+    );
+    // Alone between blocks, for the next one.
+    extension.reads(
+        "para\n\n{:.x}\n\nafter\n",
+        "<p>para</p><p class=\"x\">after</p>",
+        "<p>para</p><p>{:.x}</p><p>after</p>",
+    );
+    extension.reads(
+        "para\n\n{:.x}\n\n## H\n",
+        "<p>para</p><h2 id=\"\" class=\"x\">H</h2>",
+        "<p>para</p><p>{:.x}</p><h2 id=\"h\">H</h2>",
+    );
+    extension.reads("para\n\n{:.x}\n", "<p>para</p>", "<p>para</p><p>{:.x}</p>");
+    extension.reads(
+        "a\n\nb\n\n{:.x}\n\n{:.y}\n\nc\n",
+        "<p>a</p><p>b</p><p class=\"x y\">c</p>",
+        "<p>a</p><p>b</p><p>{:.x}</p><p>{:.y}</p><p>c</p>",
+    );
+    // Ending a paragraph.
+    extension.reads(
+        "para\n{:.x}\nmore\n",
+        "<p class=\"x\">para</p><p>more</p>",
+        "<p>para\n{:.x}\nmore</p>",
+    );
+    extension.reads(
+        "para\n{:.x}\n{:.y}\nmore *a*\n",
+        "<p class=\"x y\">para</p><p>more <em>a</em></p>",
+        "<p>para\n{:.x}\n{:.y}\nmore <em>a</em></p>",
+    );
+    // Lazy, for the outermost container.
+    extension.reads(
+        "> q\n{:.x}\n",
+        "<blockquote class=\"x\"><p>q</p></blockquote>",
+        "<blockquote><p>q\n{:.x}</p></blockquote>",
+    );
+    extension.reads(
+        "> > q\n{:.x}\n",
+        "<blockquote class=\"x\"><blockquote><p>q</p></blockquote></blockquote>",
+        "<blockquote><blockquote><p>q\n{:.x}</p></blockquote></blockquote>",
+    );
+    extension.reads(
+        "- a\n\n  b\n{:.x}\n",
+        "<ul class=\"x\"><li><p>a</p><p>b</p></li></ul>",
+        "<ul><li><p>a</p><p>b\n{:.x}</p></li></ul>",
+    );
+    // Touching nothing, or in code, they're text.
+    extension.reads("para {: .x}\n", "<p>para {: .x}</p>", "<p>para {: .x}</p>");
+    extension.reads(
+        "```\n{:.x}\n```\n",
+        "<pre>{:.x}\n</pre>",
+        "<pre>{:.x}\n</pre>",
+    );
+    // After a table, for it.
+    extension.needs(Extensions::ENABLE_TABLES).reads(
+        "a | b\n--|--\n1 | 2\n{:.x}\n",
+        "<table class=\"x\"><thead><td>a</td><td>b</td></thead><tr><td>1</td><td>2</td></tr></table>",
+        "<table><thead><td>a</td><td>b</td></thead><tr><td>1</td><td>2</td></tr><tr><td>{:.x}</td><td></td></tr></table>",
+    );
+    // Beside other cells, text.
+    extension.needs(Extensions::ENABLE_TABLES).reads(
+        "a | b\n--|--\n{:.x} | 2\n",
+        "<table><thead><td>a</td><td>b</td></thead><tr><td>{:.x}</td><td>2</td></tr></table>",
+        "<table><thead><td>a</td><td>b</td></thead><tr><td>{:.x}</td><td>2</td></tr></table>",
     );
 }
 
 #[test]
-fn span_lists_go_to_the_span_before_them() {
-    assert_eq!(
-        outline("`x`{:.hl} and *e*{: #i k=\"v w\"}\n"),
-        "<p><code class=\"hl\">x</code> and <em id=\"i\" k=\"v w\">e</em></p>"
+fn span_attributes() {
+    let extension = Extension::new(Extensions::ENABLE_SPAN_ATTRIBUTES);
+    extension.reads(
+        "`x`{:.hl} and *e*{: #i k=\"v w\"}\n",
+        "<p><code class=\"hl\">x</code> and <em id=\"i\" k=\"v w\">e</em></p>",
+        "<p><code>x</code>{:.hl} and <em>e</em>{: #i k=“v w”}</p>",
+    );
+    // The empty list separates spans.
+    extension.reads(
+        "*is italic*{::}*marked*{:.special} text\n",
+        "<p><em>is italic</em><em class=\"special\">marked</em> text</p>",
+        "<p><em>is italic</em>{::}<em>marked</em>{:.special} text</p>",
+    );
+    // Not touching the span, they're text.
+    extension.reads(
+        "`code` {:.x}\n",
+        "<p><code>code</code> {:.x}</p>",
+        "<p><code>code</code> {:.x}</p>",
     );
     // Smart quotes split the text around quoted values.
-    assert_eq!(
-        outline("a [link](http://e.com){:hreflang=\"de\"} b\n"),
-        "<p>a <a href=\"http://e.com\" hreflang=\"de\">link</a> b</p>"
-    );
-    assert_eq!(
-        outline("*is italic*{::}*marked*{:.special} text\n"),
-        "<p><em>is italic</em><em class=\"special\">marked</em> text</p>"
+    extension.needs(Extensions::ENABLE_TYPOGRAPHY).reads(
+        "a [link](http://e.com){:hreflang=\"de\"} b\n",
+        "<p>a <a href=\"http://e.com\" hreflang=\"de\">link</a> b</p>",
+        "<p>a <a href=\"http://e.com\">link</a>{:hreflang=“de”} b</p>",
     );
 }
 
 #[test]
-fn lists_touching_nothing_stay_text() {
-    assert_eq!(outline("`code` {:.x}\n"), "<p><code>code</code> {:.x}</p>");
-    assert_eq!(outline("para {: .x}\n"), "<p>para {: .x}</p>");
-    assert_eq!(outline("```\n{:.x}\n```\n"), "<pre>{:.x}\n</pre>");
-}
-
-#[test]
-fn list_item_lists_go_to_the_item() {
-    assert_eq!(
-        outline("* {:.cls} item\n* b\n"),
-        "<ul><li class=\"cls\">item</li><li>b</li></ul>"
+fn item_attributes() {
+    let extension = Extension::new(Extensions::ENABLE_ITEM_ATTRIBUTES);
+    extension.reads(
+        "* {:.cls} item\n* b\n",
+        "<ul><li class=\"cls\">item</li><li>b</li></ul>",
+        "<ul><li>{:.cls} item</li><li>b</li></ul>",
     );
 }
 
 #[test]
 fn header_ids() {
-    assert_eq!(
-        outline("# One 1\n# One\n# One\n"),
-        "<h1 id=\"one-1\">One 1</h1><h1 id=\"one\">One</h1><h1 id=\"one-1\">One</h1>"
+    let extension = Extension::new(Extensions::ENABLE_HEADER_IDS);
+    extension.reads(
+        "# A {#b}\n",
+        "<h1 id=\"b\">A</h1>",
+        "<h1 id=\"a-b\">A {#b}</h1>",
     );
-    assert_eq!(
-        outline("# Hello #    {#custom}\n"),
-        "<h1 id=\"custom\">Hello</h1>"
+    extension.reads(
+        "# Hello #    {#custom}\n",
+        "<h1 id=\"custom\">Hello</h1>",
+        "<h1 id=\"hello-----custom\">Hello #    {#custom}</h1>",
     );
-    assert_eq!(outline("## H {: #id}\n"), "<h2 id=\"h--id\">H {: #id}</h2>");
-    assert_eq!(
-        outline("## Two \"quoted\" -- dash\n"),
-        "<h2 id=\"two-quoted--dash\">Two “quoted” – dash</h2>"
+    // An attribute list isn't a header id.
+    extension.needs(Extensions::ENABLE_AUTO_IDS).reads(
+        "## H {: #id}\n",
+        "<h2 id=\"h--id\">H {: #id}</h2>",
+        "<h2 id=\"h--id\">H {: #id}</h2>",
+    );
+}
+
+#[test]
+fn auto_ids() {
+    let extension = Extension::new(Extensions::ENABLE_AUTO_IDS);
+    extension.reads("# A\n", "<h1 id=\"a\">A</h1>", "<h1 id=\"\">A</h1>");
+    // Repeats are numbered, past ids already taken.
+    extension.reads(
+        "# One 1\n# One\n# One\n",
+        "<h1 id=\"one-1\">One 1</h1><h1 id=\"one\">One</h1><h1 id=\"one-1\">One</h1>",
+        "<h1 id=\"\">One 1</h1><h1 id=\"\">One</h1><h1 id=\"\">One</h1>",
+    );
+}
+
+#[test]
+fn markdown_attribute() {
+    let extension = Extension::new(Extensions::ENABLE_MARKDOWN_ATTRIBUTE);
+    extension.reads(
+        "<div markdown=\"1\">\n*a*\n</div>\n",
+        "<html><div markdown=\"1\">\n</html><p><em>a</em></p><html></div>\n</html>",
+        "<html><div markdown=\"1\">\n*a*\n</div>\n</html>",
+    );
+}
+
+#[test]
+fn span_tag_paragraphs() {
+    let extension = Extension::new(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS);
+    extension.reads(
+        "<b>\n*a*\n",
+        "<p><b> <em>a</em></p>",
+        "<html><b>\n*a*\n</html>",
+    );
+}
+
+#[test]
+fn language_classes() {
+    let extension = Extension::new(Extensions::ENABLE_LANGUAGE_CLASSES);
+    extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES).reads(
+        "~~~\ndef x\n~~~\n{: .language-ruby}\n",
+        "<pre lang=\"ruby\" class=\"language-ruby\">def x\n</pre>",
+        "<pre class=\"language-ruby\">def x\n</pre>",
     );
 }
 
 #[test]
 fn tables_of_contents() {
-    let markdown = "* TOC\n{:toc}\n\n## See [docs](http://x.com) *now* [^1]\n\n## Two\n{:.no_toc}\n\n# Hello #    {#custom}\n\n### Deep\n\n[^1]: note\n";
-    let toc = "<ul>\
-        <li><a href=\"#see-docs-now-\">See docs <em>now</em> </a></li>\
-        <li><a href=\"#custom\">Hello</a><ul>\
-        <li><a href=\"#deep\">Deep</a></li>\
-        </ul></li>\
-        </ul>";
-    assert!(outline(markdown).starts_with(toc), "{}", outline(markdown));
-
-    let markdown = "1. TOC\n{:toc}\n\n## A\n### B\n#### C\n## D\n";
-    let toc = "<ol>\
-        <li><a href=\"#a\">A</a><ol>\
-        <li><a href=\"#b\">B</a><ol>\
-        <li><a href=\"#c\">C</a></li>\
-        </ol></li>\
-        </ol></li>\
-        <li><a href=\"#d\">D</a></li>\
-        </ol>";
-    assert!(outline(markdown).starts_with(toc), "{}", outline(markdown));
-
-    // Each table lists every heading, before it or after.
-    let markdown = "* TOC\n{:toc}\n\n# A\n\n* TOC\n{:toc}\n\n# B\n";
-    let toc = "<ul>\
-        <li><a href=\"#a\">A</a></li>\
-        <li><a href=\"#b\">B</a></li>\
-        </ul>";
-    assert_eq!(
-        outline(markdown),
-        format!("{toc}<h1 id=\"a\">A</h1>{toc}<h1 id=\"b\">B</h1>")
+    let extension = Extension::new(Extensions::ENABLE_TABLES_OF_CONTENTS);
+    // Nested by level.
+    extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES | Extensions::ENABLE_AUTO_IDS).reads(
+        "1. TOC\n{:toc}\n\n## A\n### B\n#### C\n## D\n",
+        "<ol><li><a href=\"#a\">A</a><ol><li><a href=\"#b\">B</a><ol><li><a href=\"#c\">C</a></li></ol></li></ol></li><li><a href=\"#d\">D</a></li></ol><h2 id=\"a\">A</h2><h3 id=\"b\">B</h3><h4 id=\"c\">C</h4><h2 id=\"d\">D</h2>",
+        "<ol><li>TOC</li></ol><h2 id=\"a\">A</h2><h3 id=\"b\">B</h3><h4 id=\"c\">C</h4><h2 id=\"d\">D</h2>",
+    );
+    // Each lists every heading, before it or after.
+    extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES | Extensions::ENABLE_AUTO_IDS).reads(
+        "* TOC\n{:toc}\n\n# A\n\n* TOC\n{:toc}\n\n# B\n",
+        "<ul><li><a href=\"#a\">A</a></li><li><a href=\"#b\">B</a></li></ul><h1 id=\"a\">A</h1><ul><li><a href=\"#a\">A</a></li><li><a href=\"#b\">B</a></li></ul><h1 id=\"b\">B</h1>",
+        "<ul><li>TOC</li></ul><h1 id=\"a\">A</h1><ul><li>TOC</li></ul><h1 id=\"b\">B</h1>",
+    );
+    // Leaving out links, footnotes and headings marked no_toc.
+    extension.needs(Extensions::ENABLE_FOOTNOTES | Extensions::ENABLE_BLOCK_ATTRIBUTES | Extensions::ENABLE_HEADER_IDS | Extensions::ENABLE_AUTO_IDS).reads(
+        "* TOC\n{:toc}\n\n## See [docs](http://x.com) *now* [^1]\n\n## Two\n{:.no_toc}\n\n# Hello #    {#custom}\n\n[^1]: note\n",
+        "<ul><li><a href=\"#see-docs-now-\">See docs <em>now</em> </a></li><li><a href=\"#custom\">Hello</a></li></ul><h2 id=\"see-docs-now-\">See <a href=\"http://x.com\">docs</a> <em>now</em> [^1]</h2><h2 id=\"two\" class=\"no_toc\">Two</h2><h1 id=\"custom\">Hello</h1><footnote label=\"1\"><p>note</p></footnote>",
+        "<ul><li>TOC</li></ul><h2 id=\"see-docs-now-\">See <a href=\"http://x.com\">docs</a> <em>now</em> [^1]</h2><h2 id=\"two\" class=\"no_toc\">Two</h2><h1 id=\"custom\">Hello</h1><footnote label=\"1\"><p>note</p></footnote>",
     );
 }
 
@@ -311,7 +452,7 @@ fn extensions_own_their_options() {
         Extensions::all() - Extensions::ENABLE_TABLES,
         Cmark::ENABLE_TABLES,
     );
-    assert_eq!(outline_with("a | b\n-|-\n", options), "<p>a | b\n-|-</p>");
+    assert_eq!(outline("a | b\n-|-\n", options), "<p>a | b\n-|-</p>");
 
     // The rest are added.
     let options = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
@@ -332,88 +473,4 @@ fn extensions_own_their_options() {
         })
         .collect();
     assert!(events.into_iter().eq(Parser::new(markdown)));
-}
-
-#[test]
-fn each_extension_can_be_left_off() {
-    let without = |extension| Extensions::all() - extension;
-    assert_eq!(
-        outline_with("a | b\n-|-\n", without(Extensions::ENABLE_TABLES)),
-        "<p>a | b\n-|-</p>"
-    );
-    assert_eq!(
-        outline_with("a[^1]\n\n[^1]: b\n", without(Extensions::ENABLE_FOOTNOTES)),
-        "<p>a<a href=\"b\">^1</a></p>"
-    );
-    assert_eq!(
-        outline_with("~~a~~\n", without(Extensions::ENABLE_STRIKETHROUGH)),
-        "<p>~~a~~</p>"
-    );
-    assert_eq!(
-        outline_with("* [x] a\n", without(Extensions::ENABLE_TASK_LISTS)),
-        "<ul><li>[x] a</li></ul>"
-    );
-    assert_eq!(
-        outline_with("# a -- b\n", without(Extensions::ENABLE_TYPOGRAPHY)),
-        "<h1 id=\"a----b\">a -- b</h1>"
-    );
-    assert_eq!(
-        outline_with("a\n: b\n", without(Extensions::ENABLE_DEFINITION_LISTS)),
-        "<p>a\n: b</p>"
-    );
-    assert_eq!(
-        outline_with("$$x$$\n", without(Extensions::ENABLE_MATH)),
-        "<p>$$x$$</p>"
-    );
-    assert_eq!(
-        outline_with(
-            "para\n{:.x}\n",
-            without(Extensions::ENABLE_BLOCK_ATTRIBUTES)
-        ),
-        "<p>para\n{:.x}</p>"
-    );
-    assert_eq!(
-        outline_with("*a*{:.x}\n", without(Extensions::ENABLE_SPAN_ATTRIBUTES)),
-        "<p><em>a</em>{:.x}</p>"
-    );
-    assert_eq!(
-        outline_with("* {:.x} a\n", without(Extensions::ENABLE_ITEM_ATTRIBUTES)),
-        "<ul><li>{:.x} a</li></ul>"
-    );
-    assert_eq!(
-        outline_with("# A {#b}\n", without(Extensions::ENABLE_HEADER_IDS)),
-        "<h1 id=\"a-b\">A {#b}</h1>"
-    );
-    assert_eq!(
-        outline_with("# A\n", without(Extensions::ENABLE_AUTO_IDS)),
-        "<h1 id=\"\">A</h1>"
-    );
-    assert_eq!(
-        outline_with(
-            "<div markdown=\"1\">\n*a*\n</div>\n",
-            without(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
-        ),
-        "<html><div markdown=\"1\">\n*a*\n</div>\n</html>"
-    );
-    assert_eq!(
-        outline_with(
-            "<b>\n*a*\n",
-            without(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
-        ),
-        "<html><b>\n*a*\n</html>"
-    );
-    assert_eq!(
-        outline_with(
-            "~~~\nx\n~~~\n{: .language-ruby}\n",
-            without(Extensions::ENABLE_LANGUAGE_CLASSES)
-        ),
-        "<pre class=\"language-ruby\">x\n</pre>"
-    );
-    assert_eq!(
-        outline_with(
-            "* TOC\n{:toc}\n\n# A\n",
-            without(Extensions::ENABLE_TABLES_OF_CONTENTS)
-        ),
-        "<ul><li>TOC</li></ul><h1 id=\"a\">A</h1>"
-    );
 }
