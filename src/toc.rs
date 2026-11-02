@@ -1,5 +1,11 @@
 //! kramdown's tables of contents, lists marked `{:toc}` made into links to
 //! the document's headings.
+//!
+//! Every table lists every heading, so a document of many tables and many
+//! headings would grow with the square of its size. The tables share a
+//! budget of items, the larger of the document's items and 100,000, as
+//! pulldown-cmark limits link reference expansion. Once a table doesn't fit
+//! in what's left, its list and every later marked list stay as written.
 
 use std::ops::Range;
 
@@ -29,22 +35,72 @@ struct Entry<'a> {
 impl<'a> Toc<'a> {
     /// Replaces each list in `items` marked `{:toc}` with a list of links to
     /// the headings, nested by level, leaving out those with the class
-    /// `no_toc`.
-    pub fn replace_lists(mut items: Vec<Item<'a>>) -> Vec<Item<'a>> {
-        let lists: Vec<usize> = (0..items.len())
-            .filter(|&i| items[i].lists.toc && matches!(items[i].event, Event::Start(Tag::List(_))))
-            .collect();
-        if lists.is_empty() {
+    /// `no_toc`. The tables give out at most the larger of `items.len()`
+    /// and 100,000 items; from the first that doesn't fit, lists stay as
+    /// written.
+    pub fn replace_lists(items: Vec<Item<'a>>) -> Vec<Item<'a>> {
+        let budget = items.len().max(100_000);
+        Self::replace_lists_within(items, budget)
+    }
+
+    /// Replaces the lists marked `{:toc}` as long as the tables fit in
+    /// `budget` items, in one pass.
+    fn replace_lists_within(items: Vec<Item<'a>>, mut budget: usize) -> Vec<Item<'a>> {
+        let is_mark =
+            |item: &Item<'a>| item.lists.toc && matches!(item.event, Event::Start(Tag::List(_)));
+        if !items.iter().any(is_mark) {
             return items;
         }
         let toc = Self::new(&items);
-        // From the back, so the lists before each one stay where they are.
-        for &list in lists.iter().rev() {
-            let end = Item::end_of(&items, list);
-            let links = toc.list(&items[list]);
-            items.splice(list..=end, links);
+        let size = toc.size();
+        // The lists made into tables, as their first and last items.
+        let mut lists = Vec::new();
+        let mut i = 0;
+        while i < items.len() {
+            if is_mark(&items[i]) {
+                if size > budget {
+                    // This and every later list stay as written.
+                    break;
+                }
+                budget -= size;
+                let end = Item::end_of(&items, i);
+                lists.push((i, end));
+                i = end;
+            }
+            i += 1;
         }
-        items
+        let mut out = Vec::with_capacity(items.len() + lists.len() * size);
+        let mut lists = lists.into_iter().peekable();
+        let mut skip_to = None;
+        for (i, item) in items.into_iter().enumerate() {
+            if let Some(end) = skip_to {
+                if i == end {
+                    skip_to = None;
+                }
+                continue;
+            }
+            if let Some(&(start, end)) = lists.peek()
+                && start == i
+            {
+                lists.next();
+                toc.write_list(&item, &mut out);
+                if end != i {
+                    skip_to = Some(end);
+                }
+                continue;
+            }
+            out.push(item);
+        }
+        out
+    }
+
+    /// The number of items in each table of contents.
+    fn size(&self) -> usize {
+        2 + (0..self.entries.len())
+            .map(|i| {
+                4 + self.entries[i].content.len() + if self.children[i].is_empty() { 0 } else { 2 }
+            })
+            .sum::<usize>()
     }
 
     fn new(items: &[Item<'a>]) -> Self {
@@ -72,21 +128,20 @@ impl<'a> Toc<'a> {
         }
     }
 
-    /// The table of contents standing in for the list `list` starts.
-    fn list(&self, list: &Item<'a>) -> Vec<Item<'a>> {
+    /// Writes the table of contents standing in for the list `list` starts.
+    fn write_list(&self, list: &Item<'a>, out: &mut Vec<Item<'a>>) {
         let Event::Start(Tag::List(start)) = list.event else {
-            return Vec::new();
+            return;
         };
-        let mut out = vec![Item {
+        out.push(Item {
             lists: list.lists.clone(),
             ..Item::new(Event::Start(Tag::List(start)), list.range.clone())
-        }];
-        self.write_entries(&self.roots, start, &list.range, &mut out);
+        });
+        self.write_entries(&self.roots, start, &list.range, out);
         out.push(Item::new(
             Event::End(TagEnd::List(start.is_some())),
             list.range.clone(),
         ));
-        out
     }
 
     /// Writes an item linking to each of `entries`, with a list of the
@@ -185,6 +240,8 @@ mod tests {
                 Event::End(TagEnd::Item) => "</li>".into(),
                 Event::Start(Tag::Link { dest_url, .. }) => format!("<a {dest_url}>"),
                 Event::End(TagEnd::Link) => "</a>".into(),
+                Event::Start(Tag::Paragraph) => "<p>".into(),
+                Event::End(TagEnd::Paragraph) => "</p>".into(),
                 Event::Text(text) => text.to_string(),
                 event => panic!("unexpected {event:?}"),
             })
@@ -223,5 +280,41 @@ mod tests {
     fn unmarked_lists_stay() {
         let items = toc("* x\n\n# A\n", Extensions::all());
         assert_eq!(outline(&items), "<ul><li>x</li></ul>");
+    }
+
+    #[test]
+    fn tables_past_the_budget_leave_their_lists_as_written() {
+        let text = "* x\n{:toc}\n\np\n\n* x\n{:toc}\n\np\n\n* x\n{:toc}\n\n# A\n";
+        let read = || Reader::new(text, Options::from(Extensions::all())).collect();
+        let made = "<ul><li><a #a>A</a></li></ul>";
+        let written = "<ul><li>x</li></ul>";
+        let p = "<p>p</p>";
+        // Each table is 7 items: the list, the item, the link and its text.
+        let items = Toc::replace_lists_within(read(), 14);
+        assert_eq!(outline(&items), [made, p, made, p, written].concat());
+        // One short of the second table leaves it, and the third, alone.
+        let items = Toc::replace_lists_within(read(), 13);
+        assert_eq!(outline(&items), [made, p, written, p, written].concat());
+        let items = Toc::replace_lists_within(read(), 6);
+        assert_eq!(outline(&items), [written, p, written, p, written].concat());
+        // The heading after the lists is kept either way.
+        assert!(matches!(
+            &items[items.len() - 2].event,
+            Event::Text(text) if &**text == "A"
+        ));
+    }
+
+    #[test]
+    fn the_budget_is_at_least_100_000_items() {
+        // 300 tables of 300 headings would be 450,600 items, far more than
+        // the document's, so only as many tables as fit in 100,000 are made.
+        let text = "* x\n{:toc}\n\n# h\n\n".repeat(300);
+        let items = toc(&text, Extensions::all());
+        let links = items
+            .iter()
+            .filter(|item| matches!(item.event, Event::Start(Tag::Link { .. })))
+            .count();
+        let size = 2 + 300 * 5;
+        assert_eq!(links, 100_000 / size * 300);
     }
 }

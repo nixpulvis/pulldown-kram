@@ -134,7 +134,10 @@ bitflags! {
         /// each heading with an id and without the class `no_toc`. The mark
         /// is a block attribute list, so this needs those. The whole
         /// document is read before any event is given out, for them to link
-        /// to headings after them.
+        /// to headings after them. The tables give out at most the larger
+        /// of the document's items and 100,000, since each lists every
+        /// heading and could grow with the square of the document; past
+        /// that, the rest of the marked lists stay as written.
         const ENABLE_TABLES_OF_CONTENTS = 1 << 15;
     }
 }
