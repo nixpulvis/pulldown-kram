@@ -6,8 +6,12 @@ rust-version = "1.98"
 description = "Read Markdown written for kramdown, Jekyll's default, as pulldown-cmark events with attributes"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/nixpulvis/pulldown-kram"
+documentation = "https://docs.rs/pulldown-kram"
+readme = "README.md"
 keywords = ["markdown", "kramdown", "jekyll", "pulldown-cmark"]
 categories = ["text-processing", "parser-implementations"]
+# kramdown's test cases are 2 MB, and only for this repository's tests.
+exclude = ["tests/kramdown_suite/"]
 
 [dependencies]
 bitflags = "2"

@@ -1,0 +1,108 @@
+# kramdown's test cases pulldown-kram reads differently, checked by
+# tests/kramdown_suite/main.rs. A case on each line, with an optional
+# reason. UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
+# rewrites it.
+block/02_eob/beginning # end-of-block marker ^ read as text
+block/02_eob/end # end-of-block marker ^ read as text
+block/02_eob/middle # end-of-block marker ^ read as text
+block/03_paragraph/line_break_last_line # hard line break from two backslashes
+block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
+block/03_paragraph/with_html_to_native # text after a block tag's end on its line stays in the HTML block, not a paragraph
+block/04_header/atx_header # end-of-block marker; headers interrupting paragraphs; empty atx headers; header id {#A-Za-z0-9_:t}
+block/04_header/setext_header # setext underline after indented code and lists; header id {#A-Za-z0-9_:}
+block/05_blockquote/lazy # end-of-block marker ^ read as text
+block/06_codeblock/disable-highlighting # end-of-block marker ends the code block in kramdown
+block/06_codeblock/error # ~~~~~~ without a closing fence starts a code block
+block/06_codeblock/highlighting-minted # end-of-block marker ends the code block in kramdown
+block/06_codeblock/highlighting-opts # end-of-block marker ends the code block in kramdown
+block/06_codeblock/highlighting # end-of-block marker ends the code block in kramdown
+block/06_codeblock/lazy # lazy lines wrapped onto an indented code block
+block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented code block
+block/06_codeblock/rouge/multiple # fence language keeps its ?query (php?start_inline=1)
+block/06_codeblock/rouge/simple # end-of-block marker; fence language keeps its ?query
+block/06_codeblock/with_eob_marker # end-of-block marker ends the code block in kramdown
+block/06_codeblock/with_ial # block attribute list between code blocks
+block/07_horizontal_rule/error # long dash runs made into other dashes
+block/08_list/escaping # lists starting at any number interrupting a paragraph
+block/08_list/item_ial # nomarkdown extension
+block/08_list/lazy # list item paragraphs (kramdown wraps per item, not per loose list)
+block/08_list/lazy_and_nested # list nesting by indentation under an ordered item
+block/08_list/list_and_others # mixing *, + and - in one list; list item paragraphs
+block/08_list/mixed # mixing *, + and - in one list; list item paragraphs; tab-indented nesting
+block/08_list/nested # end-of-block marker; list item paragraphs
+block/08_list/other_first_element # code block first in an item; end-of-block marker; list item paragraphs
+block/08_list/simple_ol # list item paragraphs (kramdown wraps per item, not per loose list)
+block/08_list/simple_ul # list item paragraphs (kramdown wraps per item, not per loose list)
+block/08_list/special_cases # end-of-block marker; nested list after a paragraph; list item paragraphs
+block/09_html/cdata_section # CDATA kept, kramdown writes its content
+block/09_html/comment # HTML block after a comment line; comment inside a paragraph
+block/09_html/content_model/tables # markdown="span" on table cells left as HTML
+block/09_html/html_to_native/list_ol # HTML indented in a list item read as an indented code block
+block/09_html/html_to_native/list_ul # HTML indented in a list item read as an indented code block
+block/09_html/invalid_html_1 # stray end tag kept as HTML, kramdown makes it text
+block/09_html/markdown_attr # markdown="block", "span" and "0"; markdown attribute left in the HTML
+block/09_html/not_parsed # stray end tag kept as HTML, kramdown makes it text
+block/09_html/parse_as_raw # <script> inside a paragraph's line starts an HTML block
+block/09_html/parse_as_span # HTML blocks end where CommonMark ends them, not kramdown
+block/09_html/parse_block_html # stray end tag kept as HTML, which kramdown writes as text
+block/09_html/processing_instruction # processing instructions read as HTML blocks
+block/09_html/simple # text after an HTML block's end tag stays in the block, not a paragraph
+block/09_html/standalone_image_in_div # markdown="1" left in the HTML
+block/09_html/xml # XML-namespaced tags not read as HTML
+block/11_ial/nested # block attribute lists on HTML blocks
+block/11_ial/simple # attribute list definitions; block attribute list after a list item
+block/12_extension/comment # comment extension
+block/12_extension/ignored # unknown extensions dropped instead of kept as text
+block/12_extension/nomarkdown # nomarkdown extension
+block/12_extension/options # options extension; markdown="1" span content
+block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition attribute lists; end-of-block marker
+block/13_definition_list/deflist_ial # block attribute list on a definition list
+block/13_definition_list/item_ial # definition attribute lists
+block/13_definition_list/separated_by_eob # end-of-block marker
+block/13_definition_list/simple # empty definition ends the list
+block/13_definition_list/too_much_space # definition after a blank line read as a definition
+block/13_definition_list/with_blocks # code block indentation inside a definition
+block/14_table/empty_tag_in_cell # table without a header row read as text
+block/14_table/errors # separator line alone read as a table
+block/14_table/escaping # tables without a header row
+block/14_table/footer # tables without a header row; footer separator lines
+block/14_table/header # tables without a header row; separator lines in a table body
+block/14_table/simple # tables without a header row
+block/14_table/table_with_footnote # tables without a header row
+block/15_math/gh_128 # math keeps the whitespace around it
+block/15_math/normal # math keeps the whitespace around it; math blocks with an end-of-block marker
+block/16_toc/no_toc # empty table of contents kept as an empty list
+encoding # tables without a header row; markdown="1" left in the HTML
+man/example # list item paragraphs; definition list attribute lists; tables without a header row
+span/01_link/image_in_a # image markup inside image alt text
+span/01_link/inline # link text with brackets; spaces and parens in inline link URLs
+span/01_link/link_defs # first link definition wins; spaces in link definition URLs
+span/01_link/link_defs_with_ial # attribute lists on link definitions
+span/01_link/reference # space between a reference link's brackets; spaces in a link definition's URL
+span/02_emphasis/empty # empty emphasis
+span/02_emphasis/errors # emphasis delimiter runs
+span/02_emphasis/nesting # emphasis inside the same emphasis; ***a*** nesting order; end-of-block marker
+span/02_emphasis/normal # ***a*** nesting order; emphasis delimiter runs
+span/03_codespan/normal # code span backslash and space handling
+span/04_footnote/backlink_inline # a table and a math block in footnote definitions read as text
+span/04_footnote/definitions # end-of-block marker
+span/04_footnote/markers # block attribute list in a footnote definition
+span/04_footnote/placement # {:footnotes} placement list
+span/05_html/invalid # unclosed HTML span kept open
+span/05_html/markdown_attr # markdown="block", "span" and "0"; markdown attribute left in the HTML
+span/05_html/normal # processing instructions; block tags in a paragraph; script content read as Markdown
+span/05_html/raw_span_elements # typography inside kbd, samp, var and code HTML
+span/05_html/xml # XML-namespaced tags not read as HTML
+span/abbreviations/abbrev # abbreviations
+span/abbreviations/abbrev_defs # abbreviations
+span/abbreviations/abbrev_in_html # abbreviations; markdown attribute left in the HTML
+span/abbreviations/in_footnote # abbreviations
+span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks; abbreviations
+span/extension/comment # comment extension
+span/extension/nomarkdown # nomarkdown extension
+span/extension/options # options extension
+span/line_breaks/normal # hard line break from two backslashes
+span/math/normal # \$ escapes before $$ math kept or read differently
+span/text_substitutions/entities # \& escape kept
+span/text_substitutions/typography # guillemets; << read as an HTML tag
+span/text_substitutions/typography_subst # guillemets from << and >> read as text or HTML
