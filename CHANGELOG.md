@@ -33,3 +33,6 @@ The first release.
   `:` more than one blank line after the terms starts no definition, an
   empty definition doesn't end its list, and a definition with nothing on
   its first line is indented by four.
+- A block attribute list on the line before a definition list's first
+  term, or lazily after its last definition, is for the list, rather than
+  an empty term before it or the last definition.

@@ -279,6 +279,17 @@ fn block_attributes() {
         "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>{:.x}</td><td>2</td></tr>\n</tbody></table>\n",
         "<table><thead><tr><th>a</th><th>b</th></tr></thead>\n<tbody><tr><td>{:.x}</td><td>2</td></tr>\n</tbody></table>\n",
     );
+    // Before a definition list's first term, or lazy after it, for the list.
+    extension.needs(Extensions::ENABLE_DEFINITION_LISTS).reads(
+        "{:.x}\na\n: b\n{:.y}\n",
+        "<dl class=\"x y\"><dt>a</dt>\n<dd>b</dd>\n</dl>\n",
+        "<dl><dt>{:.x}</dt>\n<dt>a</dt>\n<dd>b\n{:.y}</dd>\n</dl>\n",
+    );
+    extension.needs(Extensions::ENABLE_DEFINITION_LISTS).reads(
+        "a\n: b\n\n  c\n{:.x}\n",
+        "<dl class=\"x\"><dt>a</dt>\n<dd>b<p>c</p>\n</dd>\n</dl>\n",
+        "<dl><dt>a</dt>\n<dd>b<p>c\n{:.x}</p>\n</dd>\n</dl>\n",
+    );
 }
 
 #[test]

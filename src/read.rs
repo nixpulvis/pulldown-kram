@@ -482,10 +482,20 @@ impl<'a> Reader<'a> {
             .then_some(Target::Item(item))
     }
 
+    /// The definition list `title` starts the first term of, if any.
+    fn starts_definition_list(&self, title: Index) -> Option<Index> {
+        let list = title.previous()?;
+        self.pending
+            .get(list)
+            .is_some_and(|item| matches!(item.event, Event::Start(Tag::DefinitionList)))
+            .then_some(list)
+    }
+
     /// Gives `lists` alone on their line, starting at `start`, to what
     /// they're for: the paragraph they start, the paragraph they end,
-    /// splitting off the lines after them, or for a lazy line, the
-    /// outermost list or quote they're in.
+    /// splitting off the lines after them, the definition list whose first
+    /// term's line they come before, or for a lazy line, the outermost
+    /// list, quote or definition list they're in.
     fn line(&mut self, lists: Lists<'a>, lazy: bool, start: usize) {
         if let Some(split) = self.split {
             // Lists on the lines after a paragraph's lists are for it too.
@@ -502,14 +512,33 @@ impl<'a> Reader<'a> {
                 self.pending.attach(last, lists);
                 self.skip_soft_break();
             }
+            Event::Start(Tag::DefinitionListTitle)
+                if let Some(list) = self.starts_definition_list(last)
+                    && let Some((Event::SoftBreak, line)) = self.events.peek() =>
+            {
+                // The term starts on the next line.
+                let term = line.end;
+                self.events.next();
+                self.pending.attach(list, lists);
+                self.pending.item_mut(last).range.start = term;
+            }
             Event::SoftBreak => {
                 self.pending.pop();
-                let container = self.pending.open().find(|&i| {
+                // Between terms, they're for the term before, not the list.
+                let in_term = self.pending.innermost().is_some_and(|i| {
                     matches!(
                         self.pending.item(i).event,
-                        Event::Start(Tag::List(_) | Tag::BlockQuote(_))
+                        Event::Start(Tag::DefinitionListTitle)
                     )
                 });
+                let container = self
+                    .pending
+                    .open()
+                    .find(|&i| match self.pending.item(i).event {
+                        Event::Start(Tag::List(_) | Tag::BlockQuote(_)) => true,
+                        Event::Start(Tag::DefinitionList) => !in_term,
+                        _ => false,
+                    });
                 if let Some(container) = container.filter(|_| lazy) {
                     self.pending.attach(container, lists);
                     return;
