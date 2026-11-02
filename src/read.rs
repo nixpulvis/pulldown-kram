@@ -275,7 +275,18 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            Event::Start(Tag::DefinitionList) if self.continues_definition_list(range.start) => {
+            Event::Start(Tag::DefinitionList)
+                if self.continues(TagEnd::DefinitionList, range.start) =>
+            {
+                let list = self.pending.reopen();
+                self.pending.item_mut(list).range.end = range.end;
+            }
+            Event::Start(Tag::List(None))
+                if self
+                    .kramdown
+                    .contains(Extensions::ENABLE_MIXED_LIST_MARKERS)
+                    && self.continues(TagEnd::List(false), range.start) =>
+            {
                 let list = self.pending.reopen();
                 self.pending.item_mut(list).range.end = range.end;
             }
@@ -357,13 +368,15 @@ impl<'a> Reader<'a> {
             .map(|(_, lists)| lists.clone())
     }
 
-    /// Whether a definition list starting at `start` goes on with the one
-    /// just ended, with only blank lines between. kramdown's lists go on
-    /// past any blank lines, while pulldown-cmark's end after a blank line
-    /// following an empty definition.
-    fn continues_definition_list(&self, start: usize) -> bool {
+    /// Whether the element starting at `start` goes on with the one just
+    /// ended with `end`, with only blank lines between, as kramdown reads
+    /// it. A definition list goes on past any blank lines, while
+    /// pulldown-cmark's ends after a blank line following an empty
+    /// definition. And a list goes on whichever of `*`, `+` and `-` marks
+    /// its items, while pulldown-cmark's ends at each change.
+    fn continues(&self, end: TagEnd, start: usize) -> bool {
         self.pending.last().is_some_and(|last| {
-            matches!(last.event, Event::End(TagEnd::DefinitionList))
+            last.event == Event::End(end)
                 && self.text[last.range.end..start]
                     .trim_matches(|c: char| c.is_whitespace() || c == '>')
                     .is_empty()

@@ -490,6 +490,16 @@ fn list_item_paragraphs() {
 }
 
 #[test]
+fn mixed_list_markers() {
+    let extension = Extension::new(Extensions::ENABLE_MIXED_LIST_MARKERS);
+    extension.reads(
+        "- a\n+ b\n* c\n",
+        "<ul><li>a</li>\n<li>b</li>\n<li>c</li>\n</ul>\n",
+        "<ul><li>a</li>\n</ul>\n<ul><li>b</li>\n</ul>\n<ul><li>c</li>\n</ul>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

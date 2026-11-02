@@ -78,8 +78,7 @@
 //!   first, and `1984\.` escaping a marker.
 //! - [x] A list item's first paragraph bare unless a blank line comes after
 //!   it, decided for each item, not for the whole list.
-//! - [ ] Mixing `*`, `+` and `-` in one list. Each change of marker starts a
-//!   new list.
+//! - [x] Mixing `*`, `+` and `-` in one list.
 //! - [ ] Ordered lists numbered from 1 whatever the first number. The first
 //!   number is kept.
 //! - [x] Definition lists, a term on each line and a definition's first

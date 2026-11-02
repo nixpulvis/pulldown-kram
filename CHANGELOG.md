@@ -48,3 +48,5 @@ The first release.
 - `Extensions::ENABLE_LIST_ITEM_PARAGRAPHS` decides whether a list item's
   first paragraph is bare for each item, as kramdown does: bare unless a
   blank line comes after it. pulldown-cmark decides for the whole list.
+- `Extensions::ENABLE_MIXED_LIST_MARKERS` reads a list whose items are
+  marked with any of `*`, `+` and `-` as one list, as kramdown does.

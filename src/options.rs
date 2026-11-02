@@ -149,6 +149,9 @@ bitflags! {
         /// item, as kramdown does, rather than for the whole list: bare
         /// unless a blank line comes after it in the item.
         const ENABLE_LIST_ITEM_PARAGRAPHS = 1 << 17;
+        /// One list whichever of `*`, `+` and `-` marks each of its items,
+        /// where CommonMark starts a new list at each change of mark.
+        const ENABLE_MIXED_LIST_MARKERS = 1 << 18;
     }
 }
 
