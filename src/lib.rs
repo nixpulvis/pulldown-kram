@@ -87,10 +87,13 @@
 //!   first line is indented by four.
 //! - [ ] Terms on separate lines inside one span, like `*a\nb*`. They stay
 //!   one term.
-//! - [x] Tables with a header row, aligned by the header separator line.
-//! - [ ] Tables without a header row. Read as text.
+//! - [x] Tables with a header row, aligned by the header separator line,
+//!   which may have fewer cells than the header, and `+` between them.
+//! - [x] Tables without a header row.
+//! - [x] A `|` in code in a table's cell, kept in it.
 //! - [ ] Separator lines in a table body, and footer separator lines,
 //!   `|===`. Each is read as a row of dashes or equal signs.
+//! - [ ] A table of only separator lines. Read as a table.
 //! - [x] Horizontal rules.
 //! - [x] Math blocks, `$$` alone in a paragraph.
 //!
@@ -212,22 +215,9 @@ impl<'a> Document<'a> {
     pub fn new(markdown: &'a str, options: impl Into<Options>) -> Self {
         let options = options.into();
         let reads = |extension| options.kramdown.contains(extension);
-        // Rewrite what CommonMark reads differently, before it's read.
-        let mut text = Cow::Borrowed(markdown);
-        let mut offsets = Offsets::default();
-        let mut marks = Vec::new();
-        // First, for what the stand-ins stand for to be in the markdown.
-        if reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS)
-            || reads(Extensions::ENABLE_COMMENT_EXTENSION)
-            || reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION)
-        {
-            (text, offsets, marks) = StandIns::mark(
-                markdown,
-                reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS),
-                reads(Extensions::ENABLE_COMMENT_EXTENSION),
-                reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION),
-            );
-        }
+        // Rewrite what CommonMark reads differently, before it's read: first
+        // the stand-ins, for what they stand for to be in the markdown.
+        let (mut text, mut offsets, mut marks) = StandIns::mark(markdown, options.kramdown);
         // Moves the marks past `edits`, and adds them to the offsets.
         let mut then = |offsets: &mut Offsets, edits: Offsets| {
             for mark in &mut marks {

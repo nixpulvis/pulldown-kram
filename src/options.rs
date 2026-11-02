@@ -170,6 +170,11 @@ bitflags! {
         /// as kramdown's do, with any text after it read as Markdown, where
         /// CommonMark's run to the next blank line.
         const ENABLE_HTML_BLOCK_ENDS = 1 << 23;
+        /// Tables without a header row, like a line of only `| a | b |`,
+        /// and a `|` in code in a table's cell kept in it, rather than
+        /// starting another cell. Tables are read by pulldown-cmark, so
+        /// this needs `ENABLE_TABLES`.
+        const ENABLE_TABLES_WITHOUT_HEADERS = 1 << 24;
     }
 }
 

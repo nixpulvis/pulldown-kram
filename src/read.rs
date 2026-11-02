@@ -306,6 +306,9 @@ impl<'a> Reader<'a> {
     fn event(&mut self, event: Event<'a>, range: Range<usize>) {
         let (event, range) = self.as_kramdown(event, range);
         match event {
+            Event::Start(Tag::TableHead) if self.take_mark(&range, true).is_some() => {
+                self.skip_to(TagEnd::TableHead);
+            }
             Event::Start(Tag::HtmlBlock) if let Some(stand_in) = self.take_mark(&range, true) => {
                 self.skip_to(TagEnd::HtmlBlock);
                 let html = match stand_in {

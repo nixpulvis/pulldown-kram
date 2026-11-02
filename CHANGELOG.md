@@ -65,3 +65,7 @@ The first release.
   of the element starting it, or the end of a comment, as kramdown does,
   reading the text after it as Markdown, where it was left in the block
   up to the next blank line.
+- `Extensions::ENABLE_TABLES_WITHOUT_HEADERS` reads tables without a
+  header row, like a line of only `| a | b |`, as kramdown does, and keeps
+  a `|` in code in a table's cell in it. A header's separator line with
+  fewer cells than the header, or `+` between them, now makes a table.

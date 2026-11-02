@@ -556,6 +556,19 @@ fn html_block_ends() {
 }
 
 #[test]
+fn tables_without_headers() {
+    let extension = Extension::new(Extensions::ENABLE_TABLES_WITHOUT_HEADERS)
+        .needs(Extensions::ENABLE_TABLES);
+    // Rows alone, with a `|` in code kept in its cell, and a separator of
+    // fewer cells than the header's.
+    extension.reads(
+        "| a | `b|c` |\n| d |\n\n| e | f |\n|-\n| g | h |\n",
+        "<table><tbody><tr><td>a</td><td><code>b|c</code></td></tr>\n<tr><td>d</td><td></td></tr>\n</tbody></table>\n<table><thead><tr><th>e</th><th>f</th></tr></thead>\n<tbody><tr><td>g</td><td>h</td></tr>\n</tbody></table>\n",
+        "<p>| a | <code>b|c</code> |\n| d |</p>\n<p>| e | f |\n|-\n| g | h |</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

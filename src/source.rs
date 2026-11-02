@@ -5,6 +5,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+use crate::Extensions;
 use crate::attributes::Lists;
 
 /// Maps offsets in rewritten text back to the text it was rewritten from.
@@ -852,6 +853,135 @@ pub(crate) struct StandIns<'a> {
     end_of_blocks: bool,
     comments: bool,
     nomarkdown: bool,
+    tables: bool,
+    /// Whether `$$` math is read, a `|` in which is no cell's end.
+    math: bool,
+}
+
+/// Reading the lines of kramdown's tables.
+struct Table;
+
+impl Table {
+    /// Where the `|` in `line` outside code, and math if `math` is read, and
+    /// not escaped, are.
+    fn pipes(line: &str, math: bool) -> Vec<usize> {
+        let code = Self::code_spans(line);
+        let math = if math {
+            Self::math_spans(line)
+        } else {
+            Vec::new()
+        };
+        Self::unescaped_pipes(line)
+            .filter(|at| !code.iter().chain(&math).any(|span| span.contains(at)))
+            .collect()
+    }
+
+    /// Where the math between `$$` in `line` is.
+    fn math_spans(line: &str) -> Vec<Range<usize>> {
+        let mut spans = Vec::new();
+        let mut from = 0;
+        while let Some(open) = line[from..].find("$$").map(|at| from + at + 2)
+            && let Some(close) = line[open..].find("$$").map(|at| open + at)
+        {
+            spans.push(open..close);
+            from = close + 2;
+        }
+        spans
+    }
+
+    /// Where the `|` in code in `line`, and not escaped, are.
+    fn code_pipes(line: &str) -> Vec<usize> {
+        let code = Self::code_spans(line);
+        Self::unescaped_pipes(line)
+            .filter(|at| code.iter().any(|span| span.contains(at)))
+            .collect()
+    }
+
+    fn unescaped_pipes(line: &str) -> impl Iterator<Item = usize> + '_ {
+        line.match_indices('|')
+            .map(|(at, _)| at)
+            .filter(move |&at| {
+                let backslashes = line[..at].len() - line[..at].trim_end_matches('\\').len();
+                backslashes.is_multiple_of(2)
+            })
+    }
+
+    /// Where the code spans closed in `line` are.
+    fn code_spans(line: &str) -> Vec<Range<usize>> {
+        let mut spans = Vec::new();
+        let mut from = 0;
+        while let Some(open) = line[from..].find('`').map(|at| from + at) {
+            let run = line[open..].len() - line[open..].trim_start_matches('`').len();
+            let start = open + run;
+            // The next run of as many backticks closes it.
+            let mut search = start;
+            let mut close = None;
+            while let Some(at) = line[search..].find('`').map(|at| search + at) {
+                let len = line[at..].len() - line[at..].trim_start_matches('`').len();
+                if len == run {
+                    close = Some(at);
+                    break;
+                }
+                search = at + len;
+            }
+            match close {
+                Some(close) => {
+                    spans.push(start..close);
+                    from = close + run;
+                }
+                None => from = start,
+            }
+        }
+        spans
+    }
+
+    /// How many cells the row `line` has.
+    fn cells(line: &str, math: bool) -> usize {
+        let row = line.trim();
+        let pipes = Self::pipes(row, math);
+        let mut cells = pipes.len() + 1;
+        if row.starts_with('|') {
+            cells -= 1;
+        }
+        if row.len() > 1 && pipes.last() == Some(&(row.len() - 1)) {
+            cells -= 1;
+        }
+        cells.max(1)
+    }
+
+    /// Whether `line` separates parts of a table, like `|---|---|`.
+    fn separator(line: &str) -> bool {
+        let line = line.trim();
+        line.contains(['-', '='])
+            && line
+                .chars()
+                .all(|c| matches!(c, '|' | '+' | '-' | ':' | '=' | ' ' | '\t'))
+    }
+
+    /// The separator `line` as CommonMark reads a header's, with a cell for
+    /// each of `columns`, aligned as in `line`, if it isn't one already:
+    /// kramdown's may have fewer cells, and `+` between them.
+    fn delimiter(line: &str, columns: usize) -> Option<String> {
+        let line = line.trim();
+        let inside = line.strip_prefix(['|', '+']).unwrap_or(line);
+        let inside = inside.strip_suffix(['|', '+']).unwrap_or(inside);
+        let cells: Vec<&str> = inside.split(['|', '+']).map(str::trim).collect();
+        if cells.len() == columns && !line.contains('+') {
+            return None;
+        }
+        let mut delimiter = String::from("|");
+        for n in 0..columns {
+            let cell = cells.get(n).copied().unwrap_or("-");
+            delimiter.push_str(match (cell.starts_with(':'), cell.ends_with(':')) {
+                (true, true) => ":-:",
+                (true, false) => ":-",
+                (false, true) => "-:",
+                (false, false) => "-",
+            });
+            delimiter.push('|');
+        }
+        Some(delimiter)
+    }
 }
 
 /// An extension's start tag, like `{::comment}` or `{::nomarkdown/}`.
@@ -872,18 +1002,23 @@ impl<'a> StandIns<'a> {
     /// What stands in for a span.
     pub const SPAN: &'static str = "<kd:x>";
 
-    /// `markdown`, with a stand-in in place of each end-of-block marker,
-    /// `comment` and `nomarkdown` read, the offsets of the edits, and the
+    /// `markdown`, with a stand-in in place of each end-of-block marker and
+    /// `comment` and `nomarkdown` the `extensions` read, and a header row
+    /// put in each table without one, the offsets of the edits, and the
     /// stand-ins, in order.
     pub fn mark(
         markdown: &'a str,
-        end_of_blocks: bool,
-        comments: bool,
-        nomarkdown: bool,
+        extensions: Extensions,
     ) -> (Cow<'a, str>, Offsets, Vec<Mark<'a>>) {
-        let markers = end_of_blocks && markdown.contains('^');
-        let tags = (comments || nomarkdown) && markdown.contains("{:");
-        if !markers && !tags {
+        let reads = |extension| extensions.contains(extension);
+        let markers = reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS) && markdown.contains('^');
+        let tags = (reads(Extensions::ENABLE_COMMENT_EXTENSION)
+            || reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION))
+            && markdown.contains("{:");
+        let tables = reads(Extensions::ENABLE_TABLES_WITHOUT_HEADERS)
+            && reads(Extensions::ENABLE_TABLES)
+            && markdown.contains('|');
+        if !markers && !tags && !tables {
             return (Cow::Borrowed(markdown), Offsets::default(), Vec::new());
         }
         let mut stand_ins = Self {
@@ -893,9 +1028,11 @@ impl<'a> StandIns<'a> {
                 ..Rewrite::default()
             },
             marks: Vec::new(),
-            end_of_blocks,
-            comments,
-            nomarkdown,
+            end_of_blocks: reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS),
+            comments: reads(Extensions::ENABLE_COMMENT_EXTENSION),
+            nomarkdown: reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION),
+            tables,
+            math: reads(Extensions::ENABLE_MATH),
         };
         stand_ins.lines();
         let (text, offsets) = stand_ins.out.finish(markdown);
@@ -908,10 +1045,13 @@ impl<'a> StandIns<'a> {
         // Whether the lines are in an HTML block, where nothing is kramdown.
         let mut html = false;
         let mut after_blank = true;
+        // Whether a block may start on the line, as a table only does.
+        let mut boundary = true;
         let mut i = 0;
         while i < lines.len() {
             let line = lines[i];
             i += 1;
+            let starts_block = std::mem::replace(&mut boundary, false);
             if fence.read(line) {
                 self.out.keep(line);
                 after_blank = false;
@@ -922,6 +1062,7 @@ impl<'a> StandIns<'a> {
             if trimmed.is_empty() {
                 html = false;
                 after_blank = true;
+                boundary = true;
                 self.out.keep(line);
                 continue;
             }
@@ -934,9 +1075,12 @@ impl<'a> StandIns<'a> {
                 continue;
             }
             let content = line[lead..].trim_end();
+            boundary = content.starts_with('#')
+                || Lists::parse(content).is_some_and(|(_, len)| len == content.len());
             if self.end_of_blocks && content == "^" {
                 self.stand_in(&line[..lead], content.len(), true, StandIn::Nothing);
                 self.out.keep(&line[lead + content.len()..]);
+                boundary = true;
                 continue;
             }
             let quoted = line[..lead].contains('>');
@@ -947,12 +1091,86 @@ impl<'a> StandIns<'a> {
                 i = end + 1;
                 continue;
             }
+            if self.tables
+                && starts_block
+                && !quoted
+                && let Some(end) = self.table(&lines, i - 1)
+            {
+                i = end;
+                continue;
+            }
             if self.comments || self.nomarkdown {
                 self.spans(line);
             } else {
                 self.out.keep(line);
             }
         }
+    }
+
+    /// Keeps the table starting at the line at `start`, if one does,
+    /// returning the index of the line after it. A table is the lines with
+    /// a `|` in them outside code, ending at a blank line, the end, or
+    /// attribute lists. One without a separator line gets a header row
+    /// put in for the reader to leave out, and a `|` in code is escaped,
+    /// for CommonMark to read it as kramdown does.
+    fn table(&mut self, lines: &[&'a str], start: usize) -> Option<usize> {
+        let end = (start..lines.len())
+            .find(|&j| Table::pipes(lines[j], self.math).is_empty())
+            .unwrap_or(lines.len());
+        if end == start {
+            return None;
+        }
+        let after = lines.get(end).map_or("", |line| line.trim());
+        let lists_after = Lists::parse(after).is_some_and(|(_, len)| len == after.len());
+        let rows = &lines[start..end];
+        let separators = rows.iter().filter(|row| Table::separator(row)).count();
+        if !(after.is_empty() || lists_after) || separators == rows.len() {
+            return None;
+        }
+        if separators == 0 {
+            let columns = rows
+                .iter()
+                .map(|row| Table::cells(row, self.math))
+                .max()
+                .unwrap_or(1);
+            let mut head = "|".to_owned();
+            head.push_str(&" |".repeat(columns));
+            head.push_str("\n|");
+            head.push_str(&"-|".repeat(columns));
+            head.push('\n');
+            self.marks.push(Mark {
+                at: self.out.out.len(),
+                block: true,
+                stands_for: StandIn::Nothing,
+            });
+            self.out.insert(&head);
+        } else if !rows.get(1).is_some_and(|row| Table::separator(row)) {
+            // A separator further on, which CommonMark has no way to read.
+            return None;
+        }
+        // A header's separator as CommonMark reads one: a cell for each of
+        // the header's, between `|`.
+        let delimiter = (separators > 0)
+            .then(|| Table::delimiter(rows[1], Table::cells(rows[0], self.math)))
+            .flatten();
+        for (n, row) in rows.iter().enumerate() {
+            if n == 1
+                && let Some(delimiter) = &delimiter
+            {
+                let content = row.trim_end().len();
+                self.out.replace(content, delimiter);
+                self.out.keep(&row[content..]);
+                continue;
+            }
+            let mut kept = 0;
+            for at in Table::code_pipes(row) {
+                self.out.keep(&row[kept..at]);
+                self.out.insert("\\");
+                kept = at;
+            }
+            self.out.keep(&row[kept..]);
+        }
+        Some(end)
     }
 
     /// Puts a stand-in for `stands_for` in place of `len` bytes, after
@@ -1427,7 +1645,7 @@ mod tests {
     #[test]
     fn stand_ins_mark_only_lines_of_an_end_of_block_marker() {
         let src = "a\n^\n> b\n>  ^ \n";
-        let (text, offsets, marks) = StandIns::mark(src, true, false, false);
+        let (text, offsets, marks) = StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
         assert_eq!(text, "a\n<!---->\n> b\n>  <!----> \n");
         let at: Vec<_> = marks.iter().map(|mark| (mark.at, mark.block)).collect();
         assert_eq!(at, [(2, true), (17, true)]);
@@ -1435,7 +1653,29 @@ mod tests {
         assert_ranges_fit(src, &text, &offsets);
         // Not with more on the line, as code, in a fence, or in HTML.
         let src = "^ a\n\n    ^\n\n```\n^\n```\n\n<div>\n^\n</div>\n";
-        let (text, _, marks) = StandIns::mark(src, true, false, false);
+        let (text, _, marks) = StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
+        assert!(matches!(text, Cow::Borrowed(_)));
+        assert!(marks.is_empty());
+    }
+
+    #[test]
+    fn stand_ins_mark_heads_tables_without_one() {
+        let tables = Extensions::ENABLE_TABLES | Extensions::ENABLE_TABLES_WITHOUT_HEADERS;
+        let src = "| a | `b|c`\n| d |\n\n| e | f |\n|-+-:\n| g |\n";
+        let (text, offsets, marks) = StandIns::mark(src, tables);
+        assert_eq!(
+            text,
+            "| | |\n|-|-|\n| a | `b\\|c`\n| d |\n\n| e | f |\n|-|-:|\n| g |\n"
+        );
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].at, 0);
+        assert_ranges_fit(src, &text, &offsets);
+        // Not after a line of a paragraph, before more of one, of only
+        // separators, with a separator further on, or with `|` only in code
+        // or math, or escaped.
+        let src =
+            "a\n| b |\n\n| c |\nd\n\n|-|\n\n| e |\n| f |\n|-|\n\n`g|h`\n\n$$i|j$$\n\nk \\| l\n";
+        let (text, _, marks) = StandIns::mark(src, tables | Extensions::ENABLE_MATH);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(marks.is_empty());
     }
@@ -1444,7 +1684,10 @@ mod tests {
     fn stand_ins_mark_extensions_closed_and_escape_the_rest() {
         let src = "{::comment}\na {:/} b\n\n{:/comment}\n{::nomarkdown type=\"latex\"}\nc\n{:/}\n\
             d {::comment}e{:/} `{::comment}f{:/}` {::nomarkdown/} {:/} {::comment} {:/other}\n";
-        let (text, offsets, marks) = StandIns::mark(src, false, true, true);
+        let (text, offsets, marks) = StandIns::mark(
+            src,
+            Extensions::ENABLE_COMMENT_EXTENSION | Extensions::ENABLE_NOMARKDOWN_EXTENSION,
+        );
         assert_eq!(
             text,
             "<!---->\n<!---->\nd <kd:x> `{::comment}f{:/}` <kd:x> \\{:/} \\{::comment} {:/other}\n"
@@ -1462,7 +1705,7 @@ mod tests {
         assert_eq!(was(src, &text, &offsets, "<kd:x> `"), "{::comment}e{:/} `");
         assert_ranges_fit(src, &text, &offsets);
         // Only the extensions read: here, the two `nomarkdown`.
-        let (_, _, marks) = StandIns::mark(src, false, false, true);
+        let (_, _, marks) = StandIns::mark(src, Extensions::ENABLE_NOMARKDOWN_EXTENSION);
         assert_eq!(marks.len(), 2);
     }
 
