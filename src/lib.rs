@@ -166,17 +166,20 @@ mod toc;
 use std::borrow::Cow;
 use std::fmt;
 use std::iter::FusedIterator;
+use std::ops::Range;
 
 pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
-use source::{MarkdownElements, SpanTags};
+use source::{MarkdownElements, Offsets, SpanTags};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
 pub struct Document<'a> {
     text: Cow<'a, str>,
+    /// Where the rewritten text was in the markdown.
+    offsets: Offsets,
     options: Options,
 }
 
@@ -187,20 +190,26 @@ impl<'a> Document<'a> {
         let options = options.into();
         // Rewrite what CommonMark reads differently, before it's read.
         let mut text = Cow::Borrowed(markdown);
+        let mut offsets = Offsets::default();
         if options
             .kramdown
             .contains(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
         {
-            text = MarkdownElements::separate(markdown);
+            (text, offsets) = MarkdownElements::separate(markdown);
         }
         if options
             .kramdown
             .contains(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
-            && let Cow::Owned(joined) = SpanTags::join(&text)
+            && let (Cow::Owned(joined), joins) = SpanTags::join(&text)
         {
             text = Cow::Owned(joined);
+            offsets = offsets.then(joins);
         }
-        Self { text, options }
+        Self {
+            text,
+            offsets,
+            options,
+        }
     }
 
     /// The document's events, each with the attributes kramdown gives it.
@@ -219,7 +228,10 @@ impl<'a> Document<'a> {
         } else {
             Items::Streamed(Box::new(reader))
         };
-        Events(items)
+        Events {
+            items,
+            offsets: &self.offsets,
+        }
     }
 }
 
@@ -236,7 +248,11 @@ impl<'a> Document<'a> {
 ///     .collect();
 /// assert_eq!(classes, [vec![], vec!["x".into()]]);
 /// ```
-pub struct Events<'a>(Items<'a>);
+pub struct Events<'a> {
+    items: Items<'a>,
+    /// Where the items' ranges were in the document's markdown.
+    offsets: &'a Offsets,
+}
 
 /// Where the events come from.
 enum Items<'a> {
@@ -246,19 +262,31 @@ enum Items<'a> {
     Read(std::vec::IntoIter<read::Item<'a>>),
 }
 
+impl<'a> Events<'a> {
+    /// The events with where each came from in the document's markdown, as
+    /// pulldown-cmark's `Parser::into_offset_iter` gives them.
+    pub fn into_offset_iter(self) -> OffsetIter<'a> {
+        OffsetIter(self)
+    }
+
+    /// The next item, its range in the text read.
+    fn item(&mut self) -> Option<read::Item<'a>> {
+        match &mut self.items {
+            Items::Streamed(reader) => reader.next(),
+            Items::Read(items) => items.next(),
+        }
+    }
+}
+
 impl<'a> Iterator for Events<'a> {
     type Item = (Event<'a>, Attributes<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = match &mut self.0 {
-            Items::Streamed(reader) => reader.next(),
-            Items::Read(items) => items.next(),
-        };
-        item.map(|item| (item.event, item.lists.attributes))
+        self.item().map(|item| (item.event, item.lists.attributes))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match &self.0 {
+        match &self.items {
             Items::Streamed(reader) => reader.size_hint(),
             Items::Read(items) => items.size_hint(),
         }
@@ -270,7 +298,7 @@ impl FusedIterator for Events<'_> {}
 impl fmt::Debug for Events<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut events = f.debug_struct("Events");
-        match &self.0 {
+        match &self.items {
             Items::Streamed(reader) => events
                 .field("streamed", &true)
                 .field("ready", &reader.size_hint().0),
@@ -279,6 +307,55 @@ impl fmt::Debug for Events<'_> {
                 .field("ready", &items.len()),
         };
         events.finish()
+    }
+}
+
+/// The events of a [`Document`], each with its attributes and the byte
+/// range it came from in the markdown the document was made with.
+///
+/// The document's markdown may be rewritten a little before it's read, so
+/// pulldown-cmark reads it as kramdown does. A range covering any of what
+/// was rewritten covers all of it in the markdown, and one inside a line
+/// put in is empty, where the line went in. Every range is in order, on
+/// char boundaries, and within the markdown.
+///
+/// ```
+/// use pulldown_kram::{Document, Extensions, pulldown_cmark::{Event, Tag}};
+///
+/// let markdown = "<div markdown=\"1\">\n*a*{:.x} b\n</div>\n";
+/// let document = Document::new(markdown, Extensions::all());
+/// let (_, attributes, range) = document
+///     .events()
+///     .into_offset_iter()
+///     .find(|(event, _, _)| matches!(event, Event::Start(Tag::Emphasis)))
+///     .unwrap();
+/// assert_eq!(&markdown[range], "*a*");
+/// assert!(attributes.has_class("x"));
+/// ```
+pub struct OffsetIter<'a>(Events<'a>);
+
+impl<'a> Iterator for OffsetIter<'a> {
+    type Item = (Event<'a>, Attributes<'a>, Range<usize>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.0.item()?;
+        let range = self.0.offsets.original(item.range);
+        Some((item.event, item.lists.attributes, range))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl FusedIterator for OffsetIter<'_> {}
+
+impl fmt::Debug for OffsetIter<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OffsetIter")
+            .field("events", &self.0)
+            .field("rewritten", &!self.0.offsets.is_empty())
+            .finish()
     }
 }
 
@@ -313,5 +390,70 @@ mod tests {
             Extensions::all() - Extensions::ENABLE_TABLES_OF_CONTENTS,
         );
         assert!(all.events().eq(streamed.events()));
+    }
+
+    #[test]
+    fn offsets_are_into_the_markdown() {
+        let documents = [
+            // Nothing rewritten.
+            "# Héading {#h}\n\nSome *tëxt*{:.x} and `code`.\n\n* one\n* two\n{:.list}\n\n> quote\n",
+            // Blank lines added inside an element.
+            "<div markdown=\"1\">\n# Inside\n\n*ä*{:.x} b\n</div>\nafter\n",
+            // A span tag's line joined to the next.
+            "<span class=\"g\">  \n*ä* b\n</span>\n\nafter ü\n",
+            // Both.
+            "<div markdown=\"1\">\n<img src=\"é\" />\nnaïve *text*\nand `code`\n</div>\n\nafter ü\n",
+        ];
+        let options = [
+            Extensions::all(),
+            Extensions::all() - Extensions::ENABLE_TABLES_OF_CONTENTS,
+        ];
+        for markdown in documents {
+            for options in options {
+                let document = Document::new(markdown, options);
+                let mut checked = 0;
+                for (event, _, range) in document.events().into_offset_iter() {
+                    let Some(source) = markdown.get(range.clone()) else {
+                        panic!("{event:?} at {range:?} isn't in {markdown:?}");
+                    };
+                    let (Event::Text(text) | Event::Code(text) | Event::InlineHtml(text)) = &event
+                    else {
+                        continue;
+                    };
+                    if !document.offsets.touches(&range) {
+                        assert!(
+                            source.contains(text.as_ref()),
+                            "{event:?} at {range:?} is {source:?}"
+                        );
+                        checked += 1;
+                    }
+                }
+                assert!(checked >= 3, "only {checked} checked in {markdown:?}");
+                // The offsets don't change the events.
+                assert!(
+                    document
+                        .events()
+                        .into_offset_iter()
+                        .map(|(event, attributes, _)| (event, attributes))
+                        .eq(document.events())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn offsets_find_text_after_rewrites() {
+        let markdown = "<div markdown=\"1\">\n<b>  \n*x*{:.y}\n</div>\n\nafter ü\n";
+        let document = Document::new(markdown, Extensions::all());
+        assert!(!document.offsets.is_empty());
+        let ranges: Vec<_> = document
+            .events()
+            .into_offset_iter()
+            .filter_map(|(event, _, range)| match event {
+                Event::Text(_) | Event::InlineHtml(_) => Some(&markdown[range]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ranges, ["<b>", "  \n", "x", "after ü"]);
     }
 }
