@@ -4,6 +4,18 @@ use pulldown_cmark::CowStr;
 
 /// The id, classes and other attributes kramdown's attribute lists give an
 /// element.
+///
+/// ```
+/// use pulldown_kram::{Document, Extensions};
+///
+/// let markdown = "A paragraph.\n{: #intro .note lang=\"en\"}\n";
+/// let document = Document::new(markdown, Extensions::all());
+/// let (_, attributes) = document.events().next().unwrap();
+///
+/// assert_eq!(attributes.id.as_deref(), Some("intro"));
+/// assert!(attributes.has_class("note"));
+/// assert_eq!(attributes.pairs, [("lang", "en".into())]);
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attributes<'a> {
     /// The id from `#intro` or `id="intro"`, the last one given.
