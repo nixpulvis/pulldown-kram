@@ -262,4 +262,37 @@ mod tests {
         let src = "<div>\n*a*\n</div>\n\n<img />\n\n<b>\n```\n<b>\nx\n```\n    <b>\n    x\n";
         assert!(matches!(SpanTags::join(src), Cow::Borrowed(_)));
     }
+
+    #[test]
+    fn span_tags_ignore_case_and_may_close() {
+        assert_eq!(SpanTags::join("<IMG src=x>\na\n"), "<IMG src=x> a\n");
+        assert_eq!(SpanTags::join("</span>\na\n"), "</span> a\n");
+        // Not two tags on a line.
+        assert!(matches!(SpanTags::join("<span><b>\na\n"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn a_markdown_element_ending_the_input_gets_its_blank_line() {
+        assert_eq!(
+            MarkdownElements::separate("<div markdown=\"1\">"),
+            "<div markdown=\"1\">\n\n"
+        );
+    }
+
+    #[test]
+    fn fences_close_only_with_their_own_marks() {
+        let mut fence = Fence::default();
+        assert!(!fence.read("a\n"));
+        assert!(fence.read("~~~ruby\n"));
+        assert!(fence.read("```\n"));
+        // Not with more after the marks.
+        assert!(fence.read("~~~ x\n"));
+        assert!(fence.read("~~~~\n"));
+        assert!(!fence.read("b\n"));
+        // Not with fewer marks.
+        assert!(fence.read("````\n"));
+        assert!(fence.read("```\n"));
+        assert!(fence.read("````\n"));
+        assert!(!fence.read("c\n"));
+    }
 }

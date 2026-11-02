@@ -157,3 +157,71 @@ impl<'a> Entry<'a> {
         entries
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::read::Reader;
+    use crate::{Extensions, Options};
+
+    /// The items `text` reads as with `extensions`, tables of contents
+    /// made.
+    fn toc(text: &str, extensions: Extensions) -> Vec<Item<'_>> {
+        Toc::replace_lists(Reader::new(text, Options::from(extensions)).collect())
+    }
+
+    /// The lists and links in `items` before the first heading, as
+    /// HTML-like text.
+    fn outline(items: &[Item<'_>]) -> String {
+        items
+            .iter()
+            .take_while(|item| !matches!(item.event, Event::Start(Tag::Heading { .. })))
+            .map(|item| match &item.event {
+                Event::Start(Tag::List(None)) => "<ul>".into(),
+                Event::End(TagEnd::List(false)) => "</ul>".into(),
+                Event::Start(Tag::List(Some(start))) => format!("<ol start={start}>"),
+                Event::End(TagEnd::List(true)) => "</ol>".into(),
+                Event::Start(Tag::Item) => "<li>".into(),
+                Event::End(TagEnd::Item) => "</li>".into(),
+                Event::Start(Tag::Link { dest_url, .. }) => format!("<a {dest_url}>"),
+                Event::End(TagEnd::Link) => "</a>".into(),
+                Event::Text(text) => text.to_string(),
+                event => panic!("unexpected {event:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn entries_go_under_the_last_heading_of_a_higher_level() {
+        let items = toc("* x\n{:toc}\n\n## A\n# B\n### C\n## D\n", Extensions::all());
+        assert_eq!(
+            outline(&items),
+            "<ul><li><a #a>A</a></li><li><a #b>B</a><ul><li><a #c>C</a></li><li><a #d>D</a></li></ul></li></ul>"
+        );
+    }
+
+    #[test]
+    fn the_list_keeps_its_numbering_and_attributes() {
+        let items = toc("3. x\n{:toc .t}\n\n# A\n", Extensions::all());
+        assert_eq!(outline(&items), "<ol start=3><li><a #a>A</a></li></ol>");
+        assert!(items[0].lists.attributes.has_class("t"));
+    }
+
+    #[test]
+    fn headings_without_ids_are_left_out() {
+        let items = toc(
+            "* x\n{:toc}\n\n# A\n# B {#b}\n",
+            Extensions::all() - Extensions::ENABLE_AUTO_IDS,
+        );
+        assert_eq!(outline(&items), "<ul><li><a #b>B</a></li></ul>");
+        // With no headings, the list is left empty.
+        let items = toc("* x\n{:toc}\n", Extensions::all());
+        assert_eq!(outline(&items), "<ul></ul>");
+    }
+
+    #[test]
+    fn unmarked_lists_stay() {
+        let items = toc("* x\n\n# A\n", Extensions::all());
+        assert_eq!(outline(&items), "<ul><li>x</li></ul>");
+    }
+}

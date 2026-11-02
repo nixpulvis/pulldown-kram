@@ -318,4 +318,48 @@ mod tests {
         assert!(Lists::parse("{:.a\n}").is_none());
         assert!(Lists::parse("text {:.a}").is_none());
     }
+
+    #[test]
+    fn stops_at_a_list_left_open() {
+        let (lists, len) = Lists::parse("{:.a}{:.b").unwrap();
+        assert_eq!(lists.attributes.classes, ["a".into()]);
+        assert_eq!(len, "{:.a}".len());
+    }
+
+    #[test]
+    fn unescapes_only_the_quote_and_brace() {
+        let attributes = Lists::parse(r#"{:k="a\b\'\}" j='\''}"#)
+            .unwrap()
+            .0
+            .attributes;
+        assert_eq!(
+            attributes.pairs,
+            [("k", CowStr::from(r"a\b\'}")), ("j", CowStr::from("'"))]
+        );
+    }
+
+    #[test]
+    fn ids_start_with_an_ascii_letter_but_classes_need_not() {
+        let attributes = Lists::parse("{: #über .ünï}").unwrap().0.attributes;
+        assert_eq!(attributes.id, None);
+        assert_eq!(attributes.classes, ["ünï".into()]);
+    }
+
+    #[test]
+    fn extending_keeps_order_and_lets_the_other_win() {
+        let parse = |text| Lists::parse(text).unwrap().0;
+        let mut lists = parse(r#"{:#a .x k="1" j="2"}"#);
+        lists.extend(parse(r#"{:toc #b .y k="3"}"#));
+        lists.extend(parse("{:.z}"));
+        assert_eq!(lists.attributes.id.as_deref(), Some("b"));
+        assert_eq!(
+            lists.attributes.classes,
+            ["x".into(), "y".into(), "z".into()]
+        );
+        assert_eq!(
+            lists.attributes.pairs,
+            [("k", CowStr::from("3")), ("j", CowStr::from("2"))]
+        );
+        assert!(lists.toc);
+    }
 }

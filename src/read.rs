@@ -667,3 +667,154 @@ impl<'a> Pending<'a> {
             .is_some_and(|i| matches!(self.item(i).event, Event::Start(Tag::CodeBlock(_))))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The items `text` reads as with every extension.
+    fn read(text: &str) -> Vec<Item<'_>> {
+        Reader::new(text, Options::from(Extensions::all())).collect()
+    }
+
+    /// The elements given classes, by tag, with their classes.
+    fn classed(items: &[Item<'_>]) -> Vec<(&'static str, String)> {
+        items
+            .iter()
+            .filter(|item| !item.lists.attributes.classes.is_empty())
+            .map(|item| {
+                let tag = match &item.event {
+                    Event::Start(Tag::Paragraph) => "p",
+                    Event::Start(Tag::Item) => "li",
+                    Event::Start(Tag::Emphasis) => "em",
+                    Event::Start(Tag::Strong) => "strong",
+                    Event::Start(Tag::Strikethrough) => "del",
+                    Event::Start(Tag::Link { .. }) => "a",
+                    Event::Start(Tag::Image { .. }) => "img",
+                    event => panic!("unexpected {event:?}"),
+                };
+                (tag, item.lists.attributes.classes.join(" "))
+            })
+            .collect()
+    }
+
+    /// The text of `items`, without markup.
+    fn text(items: &[Item<'_>]) -> String {
+        items
+            .iter()
+            .filter_map(|item| match &item.event {
+                Event::Text(text) => Some(text.as_ref()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn span_lists_go_to_the_span_they_follow() {
+        let items = read("~~a~~{:.s} **b**{:.t} [c](d){:.u} ![e](f){:.v}\n");
+        assert_eq!(
+            classed(&items),
+            [
+                ("del", "s".into()),
+                ("strong", "t".into()),
+                ("a", "u".into()),
+                ("img", "v".into())
+            ]
+        );
+        assert_eq!(text(&items), "a b c e");
+    }
+
+    #[test]
+    fn text_after_span_lists_stays() {
+        let items = read("*a*{:.x}b c\n");
+        assert_eq!(classed(&items), [("em", "x".into())]);
+        assert_eq!(text(&items), "ab c");
+    }
+
+    #[test]
+    fn a_single_tilde_ends_no_span() {
+        let items = read("~a~{:.x}\n");
+        assert!(classed(&items).is_empty());
+        assert_eq!(text(&items), "~a~{:.x}");
+    }
+
+    #[test]
+    fn item_lists_in_a_loose_list() {
+        let items = read("* {:.x}   a\n\n* b\n");
+        assert_eq!(classed(&items), [("li", "x".into())]);
+        assert_eq!(text(&items), "ab");
+    }
+
+    #[test]
+    fn pending_indices_hold_as_items_are_given_out() {
+        let mut pending = Pending::default();
+        let start = pending.push(Event::Start(Tag::Paragraph), 0..2);
+        let text = pending.push(Event::Text("a".into()), 0..1);
+        let end = pending.push(Event::End(TagEnd::Paragraph), 0..2);
+        assert_eq!(pending.take_before(text).len(), 1);
+        assert!(pending.get(start).is_none());
+        assert_eq!(pending.item(text).event, Event::Text("a".into()));
+        assert_eq!(pending.start_of(end), start);
+        assert_eq!(pending.last_index(), Some(end));
+        // What's already given out can't be given again.
+        assert!(pending.take_before(start).is_empty());
+        assert_eq!(pending.push(Event::Rule, 2..3), 3);
+    }
+
+    #[test]
+    fn pending_closes_what_it_drops() {
+        let mut pending = Pending::default();
+        let table = pending.push(Event::Start(Tag::Table(Vec::new())), 0..1);
+        let row = pending.push(Event::Start(Tag::TableRow), 0..1);
+        pending.push(Event::Start(Tag::TableCell), 0..1);
+        pending.truncate(row);
+        assert_eq!(pending.innermost(), Some(table));
+        assert_eq!(pending.last_index(), Some(table));
+
+        pending.push(Event::Start(Tag::Paragraph), 0..1);
+        assert!(pending.is_empty_paragraph());
+        pending.pop();
+        assert_eq!(pending.innermost(), Some(table));
+        // Popping what isn't open leaves the open elements be.
+        pending.push(Event::SoftBreak, 0..1);
+        pending.pop();
+        assert_eq!(pending.innermost(), Some(table));
+    }
+
+    #[test]
+    fn end_of_finds_the_matching_end() {
+        let items: Vec<_> = [
+            Event::Start(Tag::List(None)),
+            Event::Start(Tag::Item),
+            Event::Text("a".into()),
+            Event::End(TagEnd::Item),
+            Event::Start(Tag::Item),
+            Event::End(TagEnd::Item),
+            Event::End(TagEnd::List(false)),
+        ]
+        .into_iter()
+        .map(|event| Item::new(event, 0..0))
+        .collect();
+        assert_eq!(Item::end_of(&items, 0), 6);
+        assert_eq!(Item::end_of(&items, 1), 3);
+        assert_eq!(Item::end_of(&items, 4), 5);
+        // Cut off before its end, the element runs to the last item.
+        assert_eq!(Item::end_of(&items[..3], 0), 2);
+    }
+
+    #[test]
+    fn language_from_the_first_language_class_when_the_fence_has_none() {
+        let language = |kind| {
+            let mut item = Item::new(Event::Start(Tag::CodeBlock(kind)), 0..0);
+            item.lists.attributes.classes =
+                vec!["x".into(), "language-rb".into(), "language-py".into()];
+            item.take_language_from_classes();
+            item.event
+        };
+        let fenced =
+            |info: &'static str| Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info.into())));
+        assert_eq!(language(CodeBlockKind::Indented), fenced("rb"));
+        assert_eq!(language(CodeBlockKind::Fenced(" ".into())), fenced("rb"));
+        assert_eq!(language(CodeBlockKind::Fenced("c".into())), fenced("c"));
+    }
+}

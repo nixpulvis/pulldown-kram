@@ -143,3 +143,87 @@ impl<'h, 'a> Heading<'h, 'a> {
         text
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pulldown_cmark::Parser;
+
+    /// The items `text` reads as, given ids with every extension, after
+    /// `before` has had its way with them.
+    fn assign<'a>(text: &'a str, before: impl FnOnce(&mut [Item<'a>])) -> Vec<Item<'a>> {
+        let mut items: Vec<_> = Parser::new(text)
+            .into_offset_iter()
+            .map(|(event, range)| Item::new(event, range))
+            .collect();
+        before(&mut items);
+        HeaderIds::default().assign(&mut items, text, Extensions::all());
+        items
+    }
+
+    /// Each heading's id and text.
+    fn headings(items: &[Item<'_>]) -> Vec<(String, String)> {
+        let mut headings = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            if let Event::Start(Tag::Heading { id, .. }) = &item.event {
+                let text = items[i + 1..Item::end_of(items, i)]
+                    .iter()
+                    .filter_map(|item| match &item.event {
+                        Event::Text(text) => Some(text.as_ref()),
+                        _ => None,
+                    })
+                    .collect();
+                headings.push((id.as_deref().unwrap_or_default().to_owned(), text));
+            }
+        }
+        headings
+    }
+
+    fn pairs(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|&(id, text)| (id.to_owned(), text.to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn explicit_ids_need_a_space_and_a_name() {
+        let text = "# A {#b}\n# C{#d}\n# E {#1f}\n# G {#h i}\n# J {#k} *l*\n";
+        assert_eq!(
+            headings(&assign(text, |_| {})),
+            pairs(&[
+                ("b", "A"),
+                ("cd", "C{#d}"),
+                ("e-1f", "E {#1f}"),
+                ("g-h-i", "G {#h i}"),
+                ("j-k-l", "J {#k} l"),
+            ])
+        );
+    }
+
+    #[test]
+    fn closing_hashes_go_only_in_atx_headings() {
+        let text = "# A # {#b}\n\nC # {#d}\n===\n\n# E# {#f}\n";
+        assert_eq!(
+            headings(&assign(text, |_| {})),
+            pairs(&[("b", "A"), ("d", "C #"), ("f", "E#")])
+        );
+    }
+
+    #[test]
+    fn an_attribute_lists_id_wins() {
+        let items = assign("# A {#b}\n", |items| {
+            items[0].lists.attributes.id = Some("c".into());
+        });
+        assert_eq!(headings(&items), pairs(&[("c", "A")]));
+    }
+
+    #[test]
+    fn made_ids_keep_word_characters_and_count_repeats() {
+        let mut ids = HeaderIds::default();
+        assert_eq!(ids.unique("Ünï Code!\tx_y-z"), "ünï-code-x_y-z");
+        assert_eq!(ids.unique("A"), "a");
+        assert_eq!(ids.unique("a"), "a-1");
+        assert_eq!(ids.unique("A!"), "a-2");
+    }
+}

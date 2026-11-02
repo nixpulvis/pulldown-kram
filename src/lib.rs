@@ -256,3 +256,37 @@ impl fmt::Debug for Events<'_> {
         f.debug_struct("Events").finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn events_read_afresh_each_time() {
+        let document = Document::new("# A\n# A\n", Extensions::all());
+        let ids = || -> Vec<String> {
+            document
+                .events()
+                .filter_map(|(event, _)| match event {
+                    Event::Start(pulldown_cmark::Tag::Heading { id, .. }) => {
+                        id.map(|id| id.to_string())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(ids(), ["a", "a-1"]);
+        assert_eq!(ids(), ["a", "a-1"]);
+    }
+
+    #[test]
+    fn reading_all_first_reads_what_streaming_does() {
+        let markdown = "# A {#x}\n\npara\n{:.y}\n\n* *b*{:.z}\n\n> q\n\n{:.w}\n\n---\n";
+        let all = Document::new(markdown, Extensions::all());
+        let streamed = Document::new(
+            markdown,
+            Extensions::all() - Extensions::ENABLE_TABLES_OF_CONTENTS,
+        );
+        assert!(all.events().eq(streamed.events()));
+    }
+}
