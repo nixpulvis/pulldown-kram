@@ -160,16 +160,8 @@ fn math() {
     );
     // Alone in its paragraph, it's a block, which kramdown writes bare.
     // Either way, it's without the whitespace around it.
-    extension.reads(
-        "$$\nx = 1\n$$\n",
-        "\\[x = 1\\]\n",
-        "<p>$$\nx = 1\n$$</p>\n",
-    );
-    extension.reads(
-        "a $$ y $$\n",
-        "<p>a \\(y\\)</p>\n",
-        "<p>a $$ y $$</p>\n",
-    );
+    extension.reads("$$\nx = 1\n$$\n", "\\[x = 1\\]\n", "<p>$$\nx = 1\n$$</p>\n");
+    extension.reads("a $$ y $$\n", "<p>a \\(y\\)</p>\n", "<p>a $$ y $$</p>\n");
     // As it is when attribute lists on the next line end its paragraph.
     extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES).reads(
         "$$x$$\n{:.m}\nmore\n",
@@ -564,8 +556,8 @@ fn html_block_ends() {
 
 #[test]
 fn tables_without_headers() {
-    let extension = Extension::new(Extensions::ENABLE_TABLES_WITHOUT_HEADERS)
-        .needs(Extensions::ENABLE_TABLES);
+    let extension =
+        Extension::new(Extensions::ENABLE_TABLES_WITHOUT_HEADERS).needs(Extensions::ENABLE_TABLES);
     // Rows alone, with a `|` in code kept in its cell, and a separator of
     // fewer cells than the header's.
     extension.reads(
