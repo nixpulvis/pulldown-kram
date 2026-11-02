@@ -2,24 +2,14 @@
 # tests/kramdown_suite/main.rs. A case on each line, with an optional
 # reason. UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
 # rewrites it.
-block/02_eob/beginning # end-of-block marker ^ read as text
-block/02_eob/end # end-of-block marker ^ read as text
-block/02_eob/middle # end-of-block marker ^ read as text
 block/03_paragraph/line_break_last_line # hard line break from two backslashes
 block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
 block/03_paragraph/with_html_to_native # text after a block tag's end on its line stays in the HTML block, not a paragraph
-block/04_header/atx_header # end-of-block marker; headers interrupting paragraphs; empty atx headers
+block/04_header/atx_header # headers interrupting paragraphs; empty atx headers
 block/04_header/setext_header # setext underline after indented code and lists
-block/05_blockquote/lazy # end-of-block marker ^ read as text
-block/06_codeblock/disable-highlighting # end-of-block marker ends the code block in kramdown
 block/06_codeblock/error # ~~~~~~ without a closing fence starts a code block
-block/06_codeblock/highlighting-minted # end-of-block marker ends the code block in kramdown
-block/06_codeblock/highlighting-opts # end-of-block marker ends the code block in kramdown
-block/06_codeblock/highlighting # end-of-block marker ends the code block in kramdown
 block/06_codeblock/lazy # lazy lines wrapped onto an indented code block
 block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented code block
-block/06_codeblock/rouge/simple # end-of-block marker ends the code block in kramdown
-block/06_codeblock/with_eob_marker # end-of-block marker ends the code block in kramdown
 block/07_horizontal_rule/error # long dash runs made into other dashes
 block/08_list/escaping # lists starting at any number interrupting a paragraph
 block/08_list/item_ial # nomarkdown extension
@@ -27,11 +17,10 @@ block/08_list/lazy # list item paragraphs (kramdown wraps per item, not per loos
 block/08_list/lazy_and_nested # list nesting by indentation under an ordered item
 block/08_list/list_and_others # mixing *, + and - in one list; list item paragraphs
 block/08_list/mixed # mixing *, + and - in one list; list item paragraphs; tab-indented nesting
-block/08_list/nested # end-of-block marker; list item paragraphs
-block/08_list/other_first_element # code block first in an item; end-of-block marker; list item paragraphs
+block/08_list/other_first_element # code in an item with nothing on its first line indented by two, not four
 block/08_list/simple_ol # list item paragraphs (kramdown wraps per item, not per loose list)
 block/08_list/simple_ul # list item paragraphs (kramdown wraps per item, not per loose list)
-block/08_list/special_cases # end-of-block marker; nested list after a paragraph; list item paragraphs
+block/08_list/special_cases # nested list after a paragraph in an item
 block/09_html/cdata_section # CDATA kept, kramdown writes its content
 block/09_html/comment # HTML block after a comment line; comment inside a paragraph
 block/09_html/content_model/tables # markdown="span" on table cells left as HTML
@@ -51,9 +40,8 @@ block/11_ial/simple # attribute list definitions; block attribute list after a l
 block/12_extension/comment # comment extension
 block/12_extension/nomarkdown # nomarkdown extension
 block/12_extension/options # options extension; markdown="1" span content
-block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition attribute lists; end-of-block marker
+block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition attribute lists
 block/13_definition_list/item_ial # definition attribute lists
-block/13_definition_list/separated_by_eob # end-of-block marker
 block/14_table/empty_tag_in_cell # table without a header row read as text
 block/14_table/errors # separator line alone read as a table
 block/14_table/escaping # tables without a header row
@@ -61,7 +49,6 @@ block/14_table/footer # tables without a header row; footer separator lines
 block/14_table/header # tables without a header row; separator lines in a table body
 block/14_table/simple # tables without a header row
 block/14_table/table_with_footnote # tables without a header row
-block/15_math/normal # math blocks with an end-of-block marker
 encoding # tables without a header row; markdown='1', in single quotes, not read
 man/example # list item paragraphs; tables without a header row
 span/01_link/image_in_a # image markup inside image alt text
@@ -70,11 +57,10 @@ span/01_link/link_defs # first link definition wins; spaces in link definition U
 span/01_link/reference # space between a reference link's brackets; spaces in a link definition's URL
 span/02_emphasis/empty # empty emphasis
 span/02_emphasis/errors # emphasis delimiter runs
-span/02_emphasis/nesting # emphasis inside the same emphasis; ***a*** nesting order; end-of-block marker
+span/02_emphasis/nesting # emphasis inside the same emphasis; ***a*** nesting order
 span/02_emphasis/normal # ***a*** nesting order; emphasis delimiter runs
 span/03_codespan/normal # code span backslash and space handling
 span/04_footnote/backlink_inline # a table and a math block in footnote definitions read as text
-span/04_footnote/definitions # end-of-block marker
 span/04_footnote/markers # block attribute list in a footnote definition
 span/04_footnote/placement # {:footnotes} placement list
 span/05_html/invalid # unclosed HTML span kept open

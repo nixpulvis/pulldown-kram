@@ -142,6 +142,9 @@ bitflags! {
         /// heading and could grow with the square of the document; past
         /// that, the rest of the marked lists stay as written.
         const ENABLE_TABLES_OF_CONTENTS = 1 << 15;
+        /// The end-of-block marker, a line of only `^`, ending the blocks
+        /// open at it, like a list or a code block, and giving out nothing.
+        const ENABLE_END_OF_BLOCK_MARKERS = 1 << 16;
     }
 }
 

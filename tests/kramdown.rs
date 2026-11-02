@@ -446,6 +446,27 @@ fn tables_of_contents() {
 }
 
 #[test]
+fn end_of_block_markers() {
+    let extension = Extension::new(Extensions::ENABLE_END_OF_BLOCK_MARKERS);
+    // Ending a list, a code block, or a quote's lazy lines.
+    extension.reads(
+        "* a\n^\n* b\n",
+        "<ul><li>a</li>\n</ul>\n<ul><li>b</li>\n</ul>\n",
+        "<ul><li>a\n^</li>\n<li>b</li>\n</ul>\n",
+    );
+    extension.reads(
+        "    c\n^\n    d\n",
+        "<pre><code>c\n</code></pre>\n<pre><code>d\n</code></pre>\n",
+        "<pre><code>c\n</code></pre>\n<p>^\nd</p>\n",
+    );
+    extension.reads(
+        "> e\n^\nf\n",
+        "<blockquote><p>e</p>\n</blockquote>\n<p>f</p>\n",
+        "<blockquote><p>e\n^\nf</p>\n</blockquote>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

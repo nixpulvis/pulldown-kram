@@ -55,7 +55,8 @@
 //! - [x] Tab stops at multiples of four.
 //! - [ ] Headers starting only on a block boundary. CommonMark lets an atx
 //!   or setext header interrupt a paragraph, so `para\n# Not` has a heading.
-//! - [ ] The end-of-block marker, `^`. Read as text.
+//! - [x] The end-of-block marker, `^`, ending the paragraph, list, quote or
+//!   code block before it.
 //!
 //! ## Structural elements
 //!
@@ -185,7 +186,7 @@ pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
-use source::{AttributeLines, DefinitionLines, MarkdownElements, Offsets, SpanTags};
+use source::{AttributeLines, DefinitionLines, EndOfBlocks, MarkdownElements, Offsets, SpanTags};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -193,6 +194,8 @@ pub struct Document<'a> {
     text: Cow<'a, str>,
     /// Where the rewritten text was in the markdown.
     offsets: Offsets,
+    /// Where each end-of-block marker's stand-in starts in the text.
+    end_of_blocks: Vec<usize>,
     options: Options,
 }
 
@@ -234,9 +237,21 @@ impl<'a> Document<'a> {
             text = Cow::Owned(rewritten);
             offsets = offsets.then(edits);
         }
+        // Last, as later edits would move the marks.
+        let mut end_of_blocks = Vec::new();
+        if options
+            .kramdown
+            .contains(Extensions::ENABLE_END_OF_BLOCK_MARKERS)
+            && let (Cow::Owned(marked), edits, marks) = EndOfBlocks::mark(&text)
+        {
+            text = Cow::Owned(marked);
+            offsets = offsets.then(edits);
+            end_of_blocks = marks;
+        }
         Self {
             text,
             offsets,
+            end_of_blocks,
             options,
         }
     }
@@ -247,7 +262,7 @@ impl<'a> Document<'a> {
     /// lists after a block are for it. With tables of contents, they're all
     /// read first, for the tables to link to the headings after them.
     pub fn events(&self) -> Events<'_> {
-        let reader = read::Reader::new(&self.text, self.options);
+        let reader = read::Reader::new(&self.text, self.options, &self.end_of_blocks);
         let items = if self
             .options
             .kramdown

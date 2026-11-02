@@ -607,6 +607,64 @@ impl DefinitionLines {
     }
 }
 
+/// kramdown's end-of-block marker, a line of only `^`, ends the blocks
+/// open at it, which CommonMark reads as text. An empty HTML comment there
+/// ends the same blocks, a paragraph, list, quote or code block, and this
+/// puts one in its place, for the reader to leave out.
+pub(crate) struct EndOfBlocks;
+
+impl EndOfBlocks {
+    /// What stands in for a marker.
+    pub const COMMENT: &str = "<!---->";
+
+    /// `markdown`, with a comment in place of each marker, the offsets of
+    /// the edits, and where each comment starts.
+    pub fn mark(markdown: &str) -> (Cow<'_, str>, Offsets, Vec<usize>) {
+        let mut marks = Vec::new();
+        if !markdown.contains('^') {
+            return (Cow::Borrowed(markdown), Offsets::default(), marks);
+        }
+        let mut out = Rewrite {
+            out: String::with_capacity(markdown.len() + 16),
+            ..Rewrite::default()
+        };
+        let mut fence = Fence::default();
+        // Whether the lines are in an HTML block, where `^` is HTML.
+        let mut html = false;
+        let mut after_blank = true;
+        for line in markdown.split_inclusive('\n') {
+            if fence.read(line) {
+                out.keep(line);
+                after_blank = false;
+                continue;
+            }
+            let text = line.trim_end();
+            let lead = text.len() - text.trim_start_matches([' ', '>']).len();
+            let rest = &text[lead..];
+            if rest.is_empty() {
+                html = false;
+                after_blank = true;
+                out.keep(line);
+                continue;
+            }
+            html |= after_blank && rest.starts_with('<');
+            after_blank = false;
+            // The spaces after the last quote marker.
+            let indent = lead - text[..lead].rfind('>').map_or(0, |i| i + 1);
+            if rest == "^" && indent < 4 && !html {
+                out.keep(&line[..lead]);
+                marks.push(out.out.len());
+                out.replace(1, Self::COMMENT);
+                out.keep(&line[lead + 1..]);
+            } else {
+                out.keep(line);
+            }
+        }
+        let (text, offsets) = out.finish(markdown);
+        (text, offsets, marks)
+    }
+}
+
 /// Keeps track of fenced code blocks, where nothing is kramdown.
 #[derive(Default)]
 struct Fence {
@@ -886,6 +944,21 @@ mod tests {
         ] {
             assert_eq!(DefinitionLines::rewrite(src).0, rewritten, "{src:?}");
         }
+    }
+
+    #[test]
+    fn end_of_blocks_mark_only_lines_of_a_marker() {
+        let src = "a\n^\n> b\n>  ^ \n";
+        let (text, offsets, marks) = EndOfBlocks::mark(src);
+        assert_eq!(text, "a\n<!---->\n> b\n>  <!----> \n");
+        assert_eq!(marks, [2, 17]);
+        assert_eq!(was(src, &text, &offsets, "<!---->"), "^");
+        assert_ranges_fit(src, &text, &offsets);
+        // Not with more on the line, as code, in a fence, or in HTML.
+        let src = "^ a\n\n    ^\n\n```\n^\n```\n\n<div>\n^\n</div>\n";
+        let (text, _, marks) = EndOfBlocks::mark(src);
+        assert!(matches!(text, Cow::Borrowed(_)));
+        assert!(marks.is_empty());
     }
 
     #[test]

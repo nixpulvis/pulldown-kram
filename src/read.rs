@@ -145,6 +145,8 @@ pub(crate) struct Reader<'a> {
     strikethroughs: Vec<bool>,
     ids: HeaderIds,
     definitions: Definitions<'a>,
+    /// Where each end-of-block marker's stand-in starts, in order.
+    end_of_blocks: &'a [usize],
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
 }
@@ -230,8 +232,9 @@ impl Target {
 }
 
 impl<'a> Reader<'a> {
-    /// Reads `text` with `options`.
-    pub fn new(text: &'a str, options: Options) -> Self {
+    /// Reads `text` with `options`, leaving out the HTML blocks standing in
+    /// for end-of-block markers at `end_of_blocks`.
+    pub fn new(text: &'a str, options: Options, end_of_blocks: &'a [usize]) -> Self {
         let markdown = options.parser_options();
         let events = Parser::new_ext(text, markdown).into_offset_iter();
         let definitions = if options
@@ -256,6 +259,7 @@ impl<'a> Reader<'a> {
             strikethroughs: Vec::new(),
             ids: HeaderIds::default(),
             definitions,
+            end_of_blocks,
             ready: VecDeque::new(),
         }
     }
@@ -263,6 +267,13 @@ impl<'a> Reader<'a> {
     fn event(&mut self, event: Event<'a>, range: Range<usize>) {
         let (event, range) = self.as_kramdown(event, range);
         match event {
+            Event::Start(Tag::HtmlBlock) if self.ends_blocks(&range) => {
+                for (event, _) in self.events.by_ref() {
+                    if matches!(event, Event::End(TagEnd::HtmlBlock)) {
+                        break;
+                    }
+                }
+            }
             Event::Start(Tag::DefinitionList) if self.continues_definition_list(range.start) => {
                 let list = self.pending.reopen();
                 self.pending.item_mut(list).range.end = range.end;
@@ -310,6 +321,14 @@ impl<'a> Reader<'a> {
                 self.push(event, range);
             }
         }
+    }
+
+    /// Whether an end-of-block marker's stand-in is in `range`.
+    fn ends_blocks(&self, range: &Range<usize>) -> bool {
+        let next = self.end_of_blocks.partition_point(|&at| at < range.start);
+        self.end_of_blocks
+            .get(next)
+            .is_some_and(|&at| at < range.end)
     }
 
     /// The lists for the link definition `event` uses, if it's the start of
@@ -1003,7 +1022,7 @@ mod tests {
 
     /// The items `text` reads as with every extension.
     fn read(text: &str) -> Vec<Item<'_>> {
-        Reader::new(text, Options::from(Extensions::all())).collect()
+        Reader::new(text, Options::from(Extensions::all()), &[]).collect()
     }
 
     /// The elements given classes, by tag, with their classes.

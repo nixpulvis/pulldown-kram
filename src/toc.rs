@@ -230,7 +230,7 @@ mod tests {
     /// The items `text` reads as with `extensions`, tables of contents
     /// made.
     fn toc(text: &str, extensions: Extensions) -> Vec<Item<'_>> {
-        Toc::replace_lists(Reader::new(text, Options::from(extensions)).collect())
+        Toc::replace_lists(Reader::new(text, Options::from(extensions), &[]).collect())
     }
 
     /// The lists and links in `items` before the first heading, as
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn toc_replace_lists_within_leaves_tables_past_the_budget_as_written() {
         let text = "* x\n{:toc}\n\np\n\n* x\n{:toc}\n\np\n\n* x\n{:toc}\n\n# A\n";
-        let read = || Reader::new(text, Options::from(Extensions::all())).collect();
+        let read = || Reader::new(text, Options::from(Extensions::all()), &[]).collect();
         let made = "<ul><li><a #a>A</a></li></ul>";
         let written = "<ul><li>x</li></ul>";
         let p = "<p>p</p>";

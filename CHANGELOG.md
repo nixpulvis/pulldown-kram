@@ -42,3 +42,6 @@ The first release.
   alone between blocks before one, go to the links and images that use
   it, as in kramdown. One before a definition no longer keeps it from
   being read, and one after no longer goes to the next block.
+- `Extensions::ENABLE_END_OF_BLOCK_MARKERS` reads kramdown's end-of-block
+  marker, a line of only `^`, ending the paragraph, list, quote or code
+  block before it.
