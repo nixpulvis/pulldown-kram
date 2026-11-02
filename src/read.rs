@@ -67,6 +67,57 @@ impl<'a> Item<'a> {
         }
         items.len() - 1
     }
+
+    /// Gives the lists in `items` the classes kramdown's GFM parser gives
+    /// task lists: `task-list` to a list with a task in it, and
+    /// `task-list-item` to each of its items from its first task on, before
+    /// any classes from attribute lists.
+    fn mark_task_lists(items: &mut [Self]) {
+        for list in 0..items.len() {
+            if !matches!(items[list].event, Event::Start(Tag::List(_))) {
+                continue;
+            }
+            let mut tasks = false;
+            let mut depth = 0usize;
+            for i in list + 1..Self::end_of(items, list) {
+                if depth == 0 && matches!(items[i].event, Event::Start(Tag::Item)) {
+                    tasks |= Self::starts_with_task(&items[i + 1..]);
+                    if tasks {
+                        items[i]
+                            .lists
+                            .attributes
+                            .classes
+                            .insert(0, "task-list-item".into());
+                    }
+                }
+                match items[i].event {
+                    Event::Start(_) => depth += 1,
+                    Event::End(_) => depth -= 1,
+                    _ => {}
+                }
+            }
+            if tasks {
+                items[list]
+                    .lists
+                    .attributes
+                    .classes
+                    .insert(0, "task-list".into());
+            }
+        }
+    }
+
+    /// Whether the content of an item, `rest`, starts with a task's box, as
+    /// it does in its first paragraph if its list is loose.
+    fn starts_with_task(rest: &[Self]) -> bool {
+        let mut events = rest.iter().map(|item| &item.event);
+        match events.next() {
+            Some(Event::TaskListMarker(_)) => true,
+            Some(Event::Start(Tag::Paragraph)) => {
+                matches!(events.next(), Some(Event::TaskListMarker(_)))
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Reads the events of a document as pulldown-cmark gives them, a block at
@@ -254,7 +305,7 @@ impl<'a> Reader<'a> {
                 }
             }
             Event::InlineMath(_) => return text(range),
-            Event::DisplayMath(math) if !self.alone_in_paragraph() => {
+            Event::DisplayMath(math) if !self.alone_in_paragraph(range.end) => {
                 return (Event::InlineMath(math), range);
             }
             _ => {}
@@ -262,13 +313,32 @@ impl<'a> Reader<'a> {
         (event, range)
     }
 
-    /// Whether the event about to be read is all there is in its
-    /// paragraph.
-    fn alone_in_paragraph(&mut self) -> bool {
+    /// Whether the event about to be read, ending at `end`, is all there is
+    /// in its paragraph, as it is when attribute lists on the next line end
+    /// the paragraph after it.
+    fn alone_in_paragraph(&mut self, end: usize) -> bool {
         self.pending
             .last()
             .is_some_and(|last| matches!(last.event, Event::Start(Tag::Paragraph)))
-            && matches!(self.events.peek(), Some((Event::End(TagEnd::Paragraph), _)))
+            && (matches!(self.events.peek(), Some((Event::End(TagEnd::Paragraph), _)))
+                || self.lists_end_line(end))
+    }
+
+    /// Whether nothing follows `end` on its line, and the next line is
+    /// attribute lists alone, for the block it ends.
+    fn lists_end_line(&self, end: usize) -> bool {
+        if !self.kramdown.contains(Extensions::ENABLE_BLOCK_ATTRIBUTES) {
+            return false;
+        }
+        let mut lines = self.text[end..].split('\n');
+        let (Some(rest), Some(next)) = (lines.next(), lines.next()) else {
+            return false;
+        };
+        let next = next
+            .trim_start_matches(|c: char| c.is_whitespace() || c == '>')
+            .trim_end();
+        rest.trim().is_empty()
+            && Lists::parse(next).is_some_and(|(_, len)| len > 0 && len == next.len())
     }
 
     /// Gives `lists`, `len` bytes at the start of `event`'s text, to what
@@ -518,12 +588,16 @@ impl<'a> Reader<'a> {
         self.pending.push(event, range)
     }
 
-    /// Gives out the items before `end`, with their ids and languages.
+    /// Gives out the items before `end`, with their ids, classes and
+    /// languages.
     fn settle(&mut self, end: Index) {
         let mut items = self.pending.take_before(end);
         self.ids.assign(&mut items, self.text, self.kramdown);
         if self.kramdown.contains(Extensions::ENABLE_DEFINITION_LISTS) {
             DefinitionLists::new(self.text).rewrite(&mut items);
+        }
+        if self.kramdown.contains(Extensions::ENABLE_TASK_LISTS) {
+            Item::mark_task_lists(&mut items);
         }
         if self.kramdown.contains(Extensions::ENABLE_LANGUAGE_CLASSES) {
             for item in &mut items {

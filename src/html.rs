@@ -841,6 +841,7 @@ mod tests {
     #[test]
     fn math_alone_in_a_paragraph_is_a_block() {
         assert_eq!(html("$$x$$\n"), "\\[x\\]\n");
+        assert_eq!(html("$$x$$\n{:.m}\n"), "<div class=\"m\">\\[x\\]\n</div>\n");
         assert_eq!(html("a $$x$$\n"), "<p>a \\(x\\)</p>\n");
     }
 

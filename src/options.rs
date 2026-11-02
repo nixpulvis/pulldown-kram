@@ -97,7 +97,9 @@ bitflags! {
         const ENABLE_FOOTNOTES = 1 << 1;
         /// `~~Strikethrough~~`, from kramdown's GFM parser.
         const ENABLE_STRIKETHROUGH = 1 << 2;
-        /// Task list items, `* [x] done`, from kramdown's GFM parser.
+        /// Task list items, `* [x] done`, from kramdown's GFM parser, with
+        /// its classes: `task-list` on the list, and `task-list-item` on
+        /// its items from the first task on.
         const ENABLE_TASK_LISTS = 1 << 3;
         /// Dashes, ellipses and smart quotes, pulldown-cmark's smart
         /// punctuation. Header ids are made from the text without them, as in

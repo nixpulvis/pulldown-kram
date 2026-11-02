@@ -87,8 +87,14 @@ fn task_lists() {
     let extension = Extension::new(Extensions::ENABLE_TASK_LISTS);
     extension.reads(
         "* [x] a\n* [ ] b\n",
-        "<ul><li><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" checked=\"checked\" />a</li>\n<li><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" />b</li>\n</ul>\n",
+        "<ul class=\"task-list\"><li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" checked=\"checked\" />a</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" />b</li>\n</ul>\n",
         "<ul><li>[x] a</li>\n<li>[ ] b</li>\n</ul>\n",
+    );
+    // Items are marked from the first task on, and the list for having one.
+    extension.reads(
+        "* a\n* [x] b\n* c\n",
+        "<ul class=\"task-list\"><li>a</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"disabled\" checked=\"checked\" />b</li>\n<li class=\"task-list-item\">c</li>\n</ul>\n",
+        "<ul><li>a</li>\n<li>[x] b</li>\n<li>c</li>\n</ul>\n",
     );
 }
 
@@ -138,6 +144,12 @@ fn math() {
         "$$\nx = 1\n$$\n",
         "\\[\nx = 1\n\\]\n",
         "<p>$$\nx = 1\n$$</p>\n",
+    );
+    // As it is when attribute lists on the next line end its paragraph.
+    extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES).reads(
+        "$$x$$\n{:.m}\nmore\n",
+        "<div class=\"m\">\\[x\\]\n</div>\n<p>more</p>\n",
+        "<p class=\"m\">$$x$$</p>\n<p>more</p>\n",
     );
 }
 
