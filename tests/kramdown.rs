@@ -140,10 +140,16 @@ fn math() {
         "<p>Costs $5, or $x$ or $$y$$.</p>\n",
     );
     // Alone in its paragraph, it's a block, which kramdown writes bare.
+    // Either way, it's without the whitespace around it.
     extension.reads(
         "$$\nx = 1\n$$\n",
-        "\\[\nx = 1\n\\]\n",
+        "\\[x = 1\\]\n",
         "<p>$$\nx = 1\n$$</p>\n",
+    );
+    extension.reads(
+        "a $$ y $$\n",
+        "<p>a \\(y\\)</p>\n",
+        "<p>a $$ y $$</p>\n",
     );
     // As it is when attribute lists on the next line end its paragraph.
     extension.needs(Extensions::ENABLE_BLOCK_ATTRIBUTES).reads(

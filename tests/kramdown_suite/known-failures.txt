@@ -68,8 +68,7 @@ block/14_table/footer # tables without a header row; footer separator lines
 block/14_table/header # tables without a header row; separator lines in a table body
 block/14_table/simple # tables without a header row
 block/14_table/table_with_footnote # tables without a header row
-block/15_math/gh_128 # math keeps the whitespace around it
-block/15_math/normal # math keeps the whitespace around it; math blocks with an end-of-block marker
+block/15_math/normal # math blocks with an end-of-block marker
 encoding # tables without a header row; markdown="1" left in the HTML
 man/example # list item paragraphs; definition list attribute lists; tables without a header row
 span/01_link/image_in_a # image markup inside image alt text

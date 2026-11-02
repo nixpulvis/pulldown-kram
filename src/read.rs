@@ -281,8 +281,9 @@ impl<'a> Reader<'a> {
     }
 
     /// `event` as kramdown reads its source, where pulldown-cmark reads more
-    /// into it: a single `~` and a single `$` are text, and `$$` math in
-    /// a paragraph with more in it is inline.
+    /// into it: a single `~` and a single `$` are text, `$$` math in a
+    /// paragraph with more in it is inline, and math is without the
+    /// whitespace around it.
     fn as_kramdown(&mut self, event: Event<'a>, range: Range<usize>) -> (Event<'a>, Range<usize>) {
         let text = |range: Range<usize>| {
             (
@@ -305,12 +306,27 @@ impl<'a> Reader<'a> {
                 }
             }
             Event::InlineMath(_) => return text(range),
-            Event::DisplayMath(math) if !self.alone_in_paragraph(range.end) => {
-                return (Event::InlineMath(math), range);
+            Event::DisplayMath(math) => {
+                let math = Self::trim(math);
+                let event = if self.alone_in_paragraph(range.end) {
+                    Event::DisplayMath(math)
+                } else {
+                    Event::InlineMath(math)
+                };
+                return (event, range);
             }
             _ => {}
         }
         (event, range)
+    }
+
+    /// `text` without the whitespace around it.
+    fn trim(text: CowStr<'a>) -> CowStr<'a> {
+        match text {
+            CowStr::Borrowed(text) => CowStr::Borrowed(text.trim()),
+            text if text.trim().len() == text.len() => text,
+            text => CowStr::from(text.trim().to_owned()),
+        }
     }
 
     /// Whether the event about to be read, ending at `end`, is all there is

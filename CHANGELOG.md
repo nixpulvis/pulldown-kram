@@ -23,3 +23,4 @@ The first release.
   text, as in kramdown, rather than being dropped.
 - A list marked `{:toc}` is dropped when there are no headings to list,
   as in kramdown, rather than left an empty list.
+- Math is without the whitespace inside its `$$`, as in kramdown.
