@@ -555,8 +555,10 @@ impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
     /// Writes a code block, as kramdown does without a highlighter: its
     /// language is the first `language-` class, the fence's coming first,
     /// written on the `code`, with the rest of the attributes on the `pre`.
-    /// One newline ends the code, whatever it ends with, and the class
-    /// `show-whitespaces` marks its spaces and tabs.
+    /// The fence's language is without the highlighter's options after a
+    /// `?`, like `php?start_inline=1`. One newline ends the code, whatever
+    /// it ends with, and the class `show-whitespaces` marks its spaces and
+    /// tabs.
     fn code_block(
         &mut self,
         kind: &CodeBlockKind,
@@ -573,6 +575,11 @@ impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
         if let CodeBlockKind::Fenced(info) = kind
             && let Some(language) = info.split_whitespace().next()
         {
+            let language = language
+                .char_indices()
+                .skip(1)
+                .find(|&(_, c)| c == '?')
+                .map_or(language, |(i, _)| &language[..i]);
             let class = format!("language-{language}");
             if !attributes.has_class(&class) {
                 attributes.classes.insert(0, class.into());
@@ -879,6 +886,19 @@ mod tests {
         assert_eq!(
             html("    x\n{: .language-py}\n"),
             "<pre><code class=\"language-py\">x\n</code></pre>\n"
+        );
+    }
+
+    #[test]
+    fn push_html_a_fences_language_is_without_highlighter_options() {
+        assert_eq!(
+            html("```php?start_inline=1\nx\n```\n"),
+            "<pre><code class=\"language-php\">x\n</code></pre>\n"
+        );
+        // A language of only a `?` and more is all language.
+        assert_eq!(
+            html("```?x\nx\n```\n"),
+            "<pre><code class=\"language-?x\">x\n</code></pre>\n"
         );
     }
 

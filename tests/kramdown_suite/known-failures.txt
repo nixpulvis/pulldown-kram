@@ -18,8 +18,7 @@ block/06_codeblock/highlighting-opts # end-of-block marker ends the code block i
 block/06_codeblock/highlighting # end-of-block marker ends the code block in kramdown
 block/06_codeblock/lazy # lazy lines wrapped onto an indented code block
 block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented code block
-block/06_codeblock/rouge/multiple # fence language keeps its ?query (php?start_inline=1)
-block/06_codeblock/rouge/simple # end-of-block marker; fence language keeps its ?query
+block/06_codeblock/rouge/simple # end-of-block marker ends the code block in kramdown
 block/06_codeblock/with_eob_marker # end-of-block marker ends the code block in kramdown
 block/06_codeblock/with_ial # block attribute list between code blocks
 block/07_horizontal_rule/error # long dash runs made into other dashes

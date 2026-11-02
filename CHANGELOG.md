@@ -24,3 +24,5 @@ The first release.
 - A list marked `{:toc}` is dropped when there are no headings to list,
   as in kramdown, rather than left an empty list.
 - Math is without the whitespace inside its `$$`, as in kramdown.
+- `html` writes a fence's language without the highlighter options after
+  a `?`, so `php?start_inline=1` is the class `language-php`.
