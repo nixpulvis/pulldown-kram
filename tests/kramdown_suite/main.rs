@@ -160,6 +160,7 @@ impl Case {
         Some(Failure {
             name: self.name.clone(),
             defaulted: self.defaulted.clone(),
+            markdown: self.text.clone(),
             difference,
         })
     }
@@ -198,18 +199,26 @@ struct Failure {
     name: String,
     /// The options kramdown converted it with its defaults for.
     defaulted: Vec<String>,
+    /// The Markdown read.
+    markdown: String,
     /// How pulldown-kram's HTML differs from kramdown's, or how it panicked.
     difference: String,
 }
 
 impl fmt::Display for Failure {
+    /// The case's name, its Markdown, each line after a `|`, and how it
+    /// fails.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} fails", self.name)?;
         if !self.defaulted.is_empty() {
             let options = self.defaulted.join(", ");
             write!(f, " with kramdown's default for {options}, as unsupported")?;
         }
-        write!(f, " (- kramdown, + pulldown-kram):\n{}", self.difference)
+        writeln!(f, " reading:")?;
+        for line in self.markdown.lines() {
+            writeln!(f, "| {line}")?;
+        }
+        write!(f, "(- kramdown, + pulldown-kram):\n{}", self.difference)
     }
 }
 

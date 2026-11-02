@@ -61,3 +61,14 @@ the cases failing now, keeping the reasons already given:
 ```sh
 UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
 ```
+
+A case that fails unlisted shows its Markdown, each line after a `|`, and
+how pulldown-kram's HTML differs from kramdown's, both normalised: `-` for
+kramdown's, `+` for pulldown-kram's. To see a listed case's, take it off
+the list for a run:
+
+```sh
+sed -i '' '/^man\/example /d' tests/kramdown_suite/known-failures.txt
+cargo test --test kramdown_suite -- --exact man/example
+git checkout tests/kramdown_suite/known-failures.txt
+```
