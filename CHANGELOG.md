@@ -29,3 +29,7 @@ The first release.
 - A header id with a `_` before punctuation, like `{#a_:b}`, is read.
 - HTML events are without the `markdown="1"` in their tags, which kramdown
   reads and leaves out.
+- Definition lists read blank lines and indentation as kramdown does: a
+  `:` more than one blank line after the terms starts no definition, an
+  empty definition doesn't end its list, and a definition with nothing on
+  its first line is indented by four.

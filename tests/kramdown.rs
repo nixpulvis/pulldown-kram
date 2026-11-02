@@ -128,6 +128,25 @@ fn definition_lists() {
         "<blockquote><dl><dt>a</dt>\n<dd>b</dd>\n<dd><p>c</p>\n</dd>\n</dl>\n</blockquote>\n",
         "<blockquote><p>a\n: b</p>\n<p>: c</p>\n</blockquote>\n",
     );
+    // More than one blank line after the terms starts no definition, but
+    // after a definition, any number may come before the next, even after
+    // an empty one.
+    extension.reads(
+        "a\n\n\n: b\n",
+        "<p>a</p>\n<p>: b</p>\n",
+        "<p>a</p>\n<p>: b</p>\n",
+    );
+    extension.reads(
+        "a\n: b\n\n\n: c\n\nd\n: \n\ne\n: f\n",
+        "<dl><dt>a</dt>\n<dd>b</dd>\n<dd><p>c</p>\n</dd>\n<dt>d</dt>\n<dd></dd>\n<dt>e</dt>\n<dd>f</dd>\n</dl>\n",
+        "<p>a\n: b</p>\n<p>: c</p>\n<p>d\n:</p>\n<p>e\n: f</p>\n",
+    );
+    // With nothing on its first line, a definition is indented by four.
+    extension.reads(
+        "a\n: \n        code\n",
+        "<dl><dt>a</dt>\n<dd><pre><code>code\n</code></pre>\n</dd>\n</dl>\n",
+        "<p>a\n:\ncode</p>\n",
+    );
 }
 
 #[test]

@@ -56,9 +56,6 @@ block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition 
 block/13_definition_list/deflist_ial # block attribute list on a definition list
 block/13_definition_list/item_ial # definition attribute lists
 block/13_definition_list/separated_by_eob # end-of-block marker
-block/13_definition_list/simple # empty definition ends the list
-block/13_definition_list/too_much_space # definition after a blank line read as a definition
-block/13_definition_list/with_blocks # code block indentation inside a definition
 block/14_table/empty_tag_in_cell # table without a header row read as text
 block/14_table/errors # separator line alone read as a table
 block/14_table/escaping # tables without a header row

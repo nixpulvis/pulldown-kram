@@ -80,7 +80,10 @@
 //! - [ ] Ordered lists numbered from 1 whatever the first number. The first
 //!   number is kept.
 //! - [x] Definition lists, a term on each line and a definition's first
-//!   paragraph bare unless a blank line comes before it.
+//!   paragraph bare unless a blank line comes before it. At most one blank
+//!   line comes between the terms and their first definition, and any
+//!   number between definitions, and a definition with nothing on its
+//!   first line is indented by four.
 //! - [ ] Terms on separate lines inside one span, like `*a\nb*`. They stay
 //!   one term.
 //! - [x] Tables with a header row, aligned by the header separator line.
@@ -180,7 +183,7 @@ pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
-use source::{MarkdownElements, Offsets, SpanTags};
+use source::{DefinitionLines, MarkdownElements, Offsets, SpanTags};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -212,6 +215,14 @@ impl<'a> Document<'a> {
         {
             text = Cow::Owned(joined);
             offsets = offsets.then(joins);
+        }
+        if options
+            .kramdown
+            .contains(Extensions::ENABLE_DEFINITION_LISTS)
+            && let (Cow::Owned(rewritten), edits) = DefinitionLines::rewrite(&text)
+        {
+            text = Cow::Owned(rewritten);
+            offsets = offsets.then(edits);
         }
         Self {
             text,

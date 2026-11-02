@@ -240,6 +240,10 @@ impl<'a> Reader<'a> {
     fn event(&mut self, event: Event<'a>, range: Range<usize>) {
         let (event, range) = self.as_kramdown(event, range);
         match event {
+            Event::Start(Tag::DefinitionList) if self.continues_definition_list(range.start) => {
+                let list = self.pending.reopen();
+                self.pending.item_mut(list).range.end = range.end;
+            }
             Event::Start(_) | Event::Rule => {
                 let top = self.pending.innermost().is_none();
                 if top && let Some(block) = self.block {
@@ -279,6 +283,19 @@ impl<'a> Reader<'a> {
                 self.push(event, range);
             }
         }
+    }
+
+    /// Whether a definition list starting at `start` goes on with the one
+    /// just ended, with only blank lines between. kramdown's lists go on
+    /// past any blank lines, while pulldown-cmark's end after a blank line
+    /// following an empty definition.
+    fn continues_definition_list(&self, start: usize) -> bool {
+        self.pending.last().is_some_and(|last| {
+            matches!(last.event, Event::End(TagEnd::DefinitionList))
+                && self.text[last.range.end..start]
+                    .trim_matches(|c: char| c.is_whitespace() || c == '>')
+                    .is_empty()
+        })
     }
 
     /// `event` as kramdown reads its source, where pulldown-cmark reads more
@@ -705,6 +722,15 @@ impl<'a> Pending<'a> {
             self.open.pop();
         }
         Some(slot.item)
+    }
+
+    /// Takes off the last item, an end, opening again the element it
+    /// closed, and returns the index of the element's start.
+    fn reopen(&mut self) -> Index {
+        let slot = self.slots.pop().expect("an end");
+        let start = slot.start.expect("an end");
+        self.open.push(start);
+        start
     }
 
     /// Drops the item at `i` and every one after it, closing those open.
