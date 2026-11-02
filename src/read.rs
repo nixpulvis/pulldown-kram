@@ -349,10 +349,39 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
+            Event::SoftBreak
+                if self
+                    .kramdown
+                    .contains(Extensions::ENABLE_BACKSLASH_LINE_BREAKS)
+                    && self.take_backslash() =>
+            {
+                self.push(Event::HardBreak, range);
+            }
             _ => {
                 self.push(event, range);
             }
         }
+    }
+
+    /// Takes the backslash off the end of the text just read, if two in the
+    /// source end it, kramdown's hard line break, returning whether it did.
+    fn take_backslash(&mut self) -> bool {
+        let Some(last) = self.pending.last_index() else {
+            return false;
+        };
+        let item = self.pending.item_mut(last);
+        let Event::Text(text) = &item.event else {
+            return false;
+        };
+        if !(text.ends_with('\\') && self.text[..item.range.end].ends_with("\\\\")) {
+            return false;
+        }
+        let kept = text.len() - 1;
+        item.event = Event::Text(match text {
+            CowStr::Borrowed(text) => CowStr::Borrowed(&text[..kept]),
+            text => CowStr::from(text[..kept].to_owned()),
+        });
+        true
     }
 
     /// What the stand-in at the start of `range` stands for, if a block's

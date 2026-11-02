@@ -62,8 +62,7 @@
 //!
 //! - [x] Paragraphs, lazy lines included.
 //! - [x] Hard line breaks from two trailing spaces.
-//! - [ ] Hard line breaks from two trailing backslashes. One backslash is
-//!   left in the text.
+//! - [x] Hard line breaks from two trailing backslashes.
 //! - [x] Setext and atx headers, the `header\n---` edge case included.
 //! - [x] Header ids, `# Hello {#id}`, while `# Hello {: #id}` stays text, as
 //!   in kramdown.

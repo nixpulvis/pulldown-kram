@@ -55,3 +55,5 @@ The first release.
   read as Markdown, and `Extensions::ENABLE_NOMARKDOWN_EXTENSION` its
   `nomarkdown`, giving its text out as HTML as it is. Their tags left
   unclosed stay text, as in kramdown.
+- `Extensions::ENABLE_BACKSLASH_LINE_BREAKS` reads two backslashes ending
+  a line as a hard line break, as kramdown does.

@@ -523,6 +523,18 @@ fn nomarkdown_extension() {
 }
 
 #[test]
+fn backslash_line_breaks() {
+    let extension = Extension::new(Extensions::ENABLE_BACKSLASH_LINE_BREAKS);
+    // The two backslashes ending a line, after any escaped, but not ending
+    // the paragraph.
+    extension.reads(
+        "a\\\\\nb \\\\\\\\\nc \\\\\n",
+        "<p>a<br />\nb \\<br />\nc \\</p>\n",
+        "<p>a\\\nb \\\\\nc \\</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 

@@ -159,6 +159,9 @@ bitflags! {
         /// span, its text given out as HTML as it is, unless its `type`
         /// is for another of kramdown's converters, like `latex`.
         const ENABLE_NOMARKDOWN_EXTENSION = 1 << 20;
+        /// Hard line breaks from two backslashes at the end of a line, as
+        /// well as from two spaces.
+        const ENABLE_BACKSLASH_LINE_BREAKS = 1 << 21;
     }
 }
 

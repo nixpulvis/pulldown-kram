@@ -2,7 +2,6 @@
 # tests/kramdown_suite/main.rs. A case on each line, with an optional
 # reason. UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
 # rewrites it.
-block/03_paragraph/line_break_last_line # hard line break from two backslashes
 block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
 block/03_paragraph/with_html_to_native # text after a block tag's end on its line stays in the HTML block, not a paragraph
 block/04_header/atx_header # headers interrupting paragraphs; empty atx headers
@@ -67,7 +66,6 @@ span/abbreviations/abbrev_in_html # abbreviations; markdown attribute left in th
 span/abbreviations/in_footnote # abbreviations
 span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks; abbreviations
 span/extension/options # options extension
-span/line_breaks/normal # hard line break from two backslashes
 span/math/normal # \$ escapes before $$ math kept or read differently
 span/text_substitutions/entities # \& escape kept
 span/text_substitutions/typography # guillemets; << read as an HTML tag
