@@ -2,7 +2,9 @@
 
 kramdown's own test cases, read with pulldown-kram and checked against the
 HTML kramdown makes of them, as pulldown-cmark checks itself against the
-CommonMark spec. `cargo test --test kramdown_suite` runs them.
+CommonMark spec. `cargo test --test kramdown_suite` runs them, each case a
+test named by its path, so `cargo test --test kramdown_suite block/04_header`
+runs only those.
 
 ## Where they're from
 
@@ -30,7 +32,7 @@ Jekyll site would show. Its header says exactly how.
 | `cases.txt` | each case, the extensions to read it without, and the unsupported options kramdown used its defaults for |
 | `entities.txt` | kramdown's named entities, to decode its HTML |
 | `known-failures.txt` | the cases pulldown-kram reads differently, with why |
-| `main.rs` | the test |
+| `main.rs` | the test harness, making a test of each case |
 | `normalise.rs` | makes both sides' HTML comparable, erasing only formatting |
 | `diff.rs` | shows how a case differs |
 
@@ -51,9 +53,10 @@ it takes.
 
 ## Known failures
 
-The test fails when a case fails that `known-failures.txt` doesn't list, or
-a listed case passes. To accept the cases failing now, keeping the reasons
-already given:
+A case listed in `known-failures.txt` has its test marked `[known failure]`,
+which passes while the case fails. The suite fails when a case fails that
+isn't listed, a listed case passes, or a listed case isn't one. To accept
+the cases failing now, keeping the reasons already given:
 
 ```sh
 UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite

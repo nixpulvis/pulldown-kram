@@ -16,3 +16,11 @@ exclude = ["tests/kramdown_suite/"]
 [dependencies]
 bitflags = "2"
 pulldown-cmark = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+libtest-mimic = "0.8"
+
+# Its own harness, to make each of kramdown's cases a test.
+[[test]]
+name = "kramdown_suite"
+harness = false

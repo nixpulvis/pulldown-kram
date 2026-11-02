@@ -415,9 +415,27 @@ impl Normaliser {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// The normaliser's own tests, run by the suite's harness.
+pub mod tests {
     use super::*;
+    use libtest_mimic::Trial;
+
+    /// A test for each function named, under its path.
+    macro_rules! trials {
+        ($($test:ident),*) => {
+            vec![$(Trial::test(concat!("normalise::tests::", stringify!($test)), || {
+                $test();
+                Ok(())
+            })),*]
+        };
+    }
+
+    pub fn trials() -> Vec<Trial> {
+        trials![
+            normaliser_normalise_erases_formatting,
+            normaliser_normalise_keeps_content_and_structure
+        ]
+    }
 
     /// Whether `a` and `b` normalise the same.
     fn same(a: &str, b: &str) -> bool {
@@ -425,8 +443,7 @@ mod tests {
         normaliser.normalise(a) == normaliser.normalise(b)
     }
 
-    #[test]
-    fn erases_formatting() {
+    fn normaliser_normalise_erases_formatting() {
         // How characters are written.
         assert!(same(
             "<p>&ldquo;a&rdquo; &#8230; &#x2026;</p>",
@@ -447,8 +464,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn keeps_content_and_structure() {
+    fn normaliser_normalise_keeps_content_and_structure() {
         assert!(!same("<p>a</p>", "<p>b</p>"));
         assert!(!same("<p>a</p>", "<p><em>a</em></p>"));
         assert!(!same("<p>a</p><p>b</p>", "<p>a b</p>"));

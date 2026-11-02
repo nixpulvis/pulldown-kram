@@ -12,21 +12,28 @@
 //! same elements. Both sides are then normalised, to erase how the HTML is
 //! formatted but not what it says, and compared.
 //!
+//! Each case is a test of its own, named by its path, so
+//! `cargo test --test kramdown_suite block/04_header` runs only those.
+//!
 //! Cases known to fail are listed in known-failures.txt, a case on each line
-//! with an optional `# reason`. The test fails when a case fails that isn't
-//! listed, printing how it differs, or when a listed case passes. With
+//! with an optional `# reason`. A listed case's test, marked
+//! `[known failure]`, passes while the case fails, and fails once it passes.
+//! A listed case that isn't one fails a test of its own. With
 //! `UPDATE_KRAMDOWN_SUITE=1`, it rewrites the list to the cases failing now
 //! instead, keeping the reasons of those already listed.
 
 mod diff;
 mod normalise;
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fmt::{self, Write as _};
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+use libtest_mimic::{Arguments, Trial};
 use pulldown_kram::{Document, Extensions, html};
 
 use diff::diff;
@@ -38,52 +45,39 @@ const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/kramdown_suite")
 /// The environment variable that rewrites the list of known failures.
 const UPDATE: &str = "UPDATE_KRAMDOWN_SUITE";
 
-#[test]
-fn kramdown_suite() {
-    let normaliser = Normaliser::load();
+/// The normaliser every case shares.
+static NORMALISER: LazyLock<Normaliser> = LazyLock::new(Normaliser::load);
+
+thread_local! {
+    /// Whether this thread is checking a case, whose panics are reported as
+    /// its failure instead.
+    static CHECKING: Cell<bool> = const { Cell::new(false) };
+}
+
+fn main() {
+    let args = Arguments::from_args();
+    let hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        if !CHECKING.get() {
+            hook(info);
+        }
+    }));
     let known = KnownFailures::load();
-    let (passed, failed) = run(&normaliser);
-    let known_failing = failed.iter().filter(|f| known.contains(&f.name)).count();
-    println!(
-        "kramdown suite: {} run, {} passing, {} failing ({known_failing} known)",
-        passed.len() + failed.len(),
-        passed.len(),
-        failed.len(),
-    );
+    let cases = Case::all();
 
     if std::env::var_os(UPDATE).is_some() {
+        let failed: Vec<_> = cases.iter().filter_map(Case::failure).collect();
         known.rewrite(&failed);
         println!("rewrote known-failures.txt with {} cases", failed.len());
         return;
     }
-    let problems = known.problems(&passed, &failed);
-    assert!(
-        problems.is_empty(),
-        "the kramdown suite differs from known-failures.txt; \
-         rerun with {UPDATE}=1 to accept it\n{problems}"
-    );
-}
-
-/// Checks every case, returning the names of those that pass, and the
-/// failures.
-fn run(normaliser: &Normaliser) -> (Vec<String>, Vec<Failure>) {
-    let mut passed = Vec::new();
-    let mut failed = Vec::new();
-    // Panics are failures of their case, reported with the rest.
-    let hook = panic::take_hook();
-    panic::set_hook(Box::new(|_| {}));
-    for case in Case::all() {
-        match case.check(normaliser) {
-            Ok(()) => passed.push(case.name),
-            Err(difference) => failed.push(Failure {
-                name: case.name,
-                defaulted: case.defaulted,
-                difference,
-            }),
-        }
-    }
-    panic::set_hook(hook);
-    (passed, failed)
+    let mut trials = normalise::tests::trials();
+    trials.extend(known.missing(&cases));
+    trials.extend(cases.into_iter().map(|case| {
+        let listed = known.contains(&case.name);
+        case.trial(listed)
+    }));
+    libtest_mimic::run(&args, trials).exit();
 }
 
 /// One of kramdown's test cases.
@@ -137,17 +131,53 @@ impl Case {
             .collect()
     }
 
+    /// The case's test: that it passes, or, `listed` as known to fail, that
+    /// it still fails.
+    fn trial(self, listed: bool) -> Trial {
+        let name = self.name.clone();
+        if listed {
+            return Trial::test(name, move || match self.check() {
+                Ok(()) => Err(format!(
+                    "listed in known-failures.txt, but passes; \
+                     rerun with {UPDATE}=1 to accept it"
+                )
+                .into()),
+                Err(_) => Ok(()),
+            })
+            .with_kind("known failure");
+        }
+        Trial::test(name, move || match self.failure() {
+            Some(failure) => {
+                Err(format!("{failure}\nrerun with {UPDATE}=1 to accept it").into())
+            }
+            None => Ok(()),
+        })
+    }
+
+    /// How the case fails, if it does.
+    fn failure(&self) -> Option<Failure> {
+        let difference = self.check().err()?;
+        Some(Failure {
+            name: self.name.clone(),
+            defaulted: self.defaulted.clone(),
+            difference,
+        })
+    }
+
     /// Checks that pulldown-kram's HTML for the case is kramdown's, once
     /// both are normalised, returning how they differ, or how it panicked,
     /// if not.
-    fn check(&self, normaliser: &Normaliser) -> Result<(), String> {
+    fn check(&self) -> Result<(), String> {
+        let normaliser = &*NORMALISER;
         let expected = normaliser.normalise(&self.html);
+        CHECKING.set(true);
         let actual = panic::catch_unwind(AssertUnwindSafe(|| {
             let mut html = String::new();
             let document = Document::new(&self.text, self.extensions);
             html::push_html(&mut html, document.events());
             normaliser.normalise(&html)
         }));
+        CHECKING.set(false);
         match actual {
             Ok(actual) if actual == expected => Ok(()),
             Ok(actual) => Err(diff(&expected, &actual)),
@@ -211,21 +241,18 @@ impl KnownFailures {
         self.0.contains_key(name)
     }
 
-    /// Where the list is wrong: the cases failing that it doesn't list, with
-    /// how they differ, and the cases it lists that pass or aren't run.
-    fn problems(&self, passed: &[String], failed: &[Failure]) -> String {
-        let mut problems = String::new();
-        for failure in failed.iter().filter(|f| !self.contains(&f.name)) {
-            writeln!(problems, "\n{failure}").unwrap();
-        }
-        for name in self.0.keys() {
-            if passed.contains(name) {
-                writeln!(problems, "\n{name} is listed as failing, but passes").unwrap();
-            } else if !failed.iter().any(|failure| &failure.name == name) {
-                writeln!(problems, "\n{name} is listed as failing, but isn't run").unwrap();
-            }
-        }
-        problems
+    /// A failing test for each listed case that isn't one.
+    fn missing(&self, cases: &[Case]) -> Vec<Trial> {
+        self.0
+            .keys()
+            .filter(|name| !cases.iter().any(|case| &case.name == *name))
+            .map(|name| {
+                Trial::test(name.clone(), || {
+                    Err("listed in known-failures.txt, but isn't a case".into())
+                })
+                .with_kind("known failure")
+            })
+            .collect()
     }
 
     /// Rewrites the list to the cases in `failed`, keeping the reasons
