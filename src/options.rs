@@ -162,6 +162,10 @@ bitflags! {
         /// Hard line breaks from two backslashes at the end of a line, as
         /// well as from two spaces.
         const ENABLE_BACKSLASH_LINE_BREAKS = 1 << 21;
+        /// The text of the HTML spans kramdown leaves raw, like `<kbd>`,
+        /// `<code>` and `<var>`, given out as it is, without Markdown or
+        /// typography read in it.
+        const ENABLE_RAW_HTML_SPANS = 1 << 22;
     }
 }
 

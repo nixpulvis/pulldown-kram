@@ -57,8 +57,7 @@ span/04_footnote/markers # block attribute list in a footnote definition
 span/04_footnote/placement # {:footnotes} placement list
 span/05_html/invalid # unclosed HTML span kept open
 span/05_html/markdown_attr # markdown="block", "span" and "0"; markdown attribute left in the HTML
-span/05_html/normal # processing instructions; block tags in a paragraph; script content read as Markdown
-span/05_html/raw_span_elements # typography inside kbd, samp, var and code HTML
+span/05_html/normal # processing instructions; invalid and block tags in a paragraph
 span/05_html/xml # XML-namespaced tags not read as HTML
 span/abbreviations/abbrev # abbreviations
 span/abbreviations/abbrev_defs # abbreviations

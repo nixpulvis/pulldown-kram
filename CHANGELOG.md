@@ -57,3 +57,7 @@ The first release.
   unclosed stay text, as in kramdown.
 - `Extensions::ENABLE_BACKSLASH_LINE_BREAKS` reads two backslashes ending
   a line as a hard line break, as kramdown does.
+- `Extensions::ENABLE_RAW_HTML_SPANS` gives the text of the HTML spans
+  kramdown leaves raw, like `<kbd>`, `<code>` and `<var>`, out as it is,
+  where Markdown and typography were read in it, so
+  `<kbd>--help</kbd>` no longer has a dash.

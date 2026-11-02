@@ -54,6 +54,42 @@ impl<'a> Item<'a> {
         }
     }
 
+    /// Whether `event` is part of a paragraph's text, not a block.
+    pub fn inline(event: &Event<'_>) -> bool {
+        match event {
+            Event::Start(tag) => matches!(
+                tag,
+                Tag::Emphasis
+                    | Tag::Strong
+                    | Tag::Strikethrough
+                    | Tag::Superscript
+                    | Tag::Subscript
+                    | Tag::Link { .. }
+                    | Tag::Image { .. }
+            ),
+            Event::End(tag) => matches!(
+                tag,
+                TagEnd::Emphasis
+                    | TagEnd::Strong
+                    | TagEnd::Strikethrough
+                    | TagEnd::Superscript
+                    | TagEnd::Subscript
+                    | TagEnd::Link
+                    | TagEnd::Image
+            ),
+            Event::Text(_)
+            | Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+            | Event::TaskListMarker(_) => true,
+            Event::Html(_) | Event::Rule => false,
+        }
+    }
+
     /// The index of the end of the element starting at `start` in `items`.
     pub fn end_of(items: &[Self], start: usize) -> usize {
         let mut depth = 0usize;
@@ -357,9 +393,71 @@ impl<'a> Reader<'a> {
             {
                 self.push(Event::HardBreak, range);
             }
+            Event::InlineHtml(tag)
+                if self.kramdown.contains(Extensions::ENABLE_RAW_HTML_SPANS)
+                    && let Some(name) = Self::raw_span_name(&tag) =>
+            {
+                self.push(Event::InlineHtml(tag), range.clone());
+                self.raw_span(name, range.end);
+            }
             _ => {
                 self.push(event, range);
             }
+        }
+    }
+
+    /// The name of the HTML span `tag` opens, if kramdown leaves its text
+    /// raw.
+    fn raw_span_name(tag: &str) -> Option<&'static str> {
+        const RAW: [&str; 10] = [
+            "code", "kbd", "math", "option", "pre", "samp", "script", "style", "textarea", "var",
+        ];
+        let inside = tag.trim_end().strip_prefix('<')?.strip_suffix('>')?;
+        if inside.ends_with('/') {
+            return None;
+        }
+        let len = inside
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(inside.len());
+        RAW.into_iter()
+            .find(|name| name.eq_ignore_ascii_case(&inside[..len]))
+    }
+
+    /// Gives out the text of the raw HTML span `name`, from `start` to its
+    /// closing tag, as it is, in place of what pulldown-cmark read of it,
+    /// as far as what it read ends before the closing tag.
+    fn raw_span(&mut self, name: &str, start: usize) {
+        let rest = &self.text[start..];
+        let Some(close) = rest.match_indices("</").find_map(|(at, _)| {
+            let after = &rest[at + "</".len()..];
+            let named = after
+                .get(..name.len())
+                .is_some_and(|tag| tag.eq_ignore_ascii_case(name));
+            let ends = after[name.len().min(after.len())..].starts_with(['>', ' ', '\t', '\n']);
+            (named && ends).then_some(start + at)
+        }) else {
+            return;
+        };
+        // As far as what pulldown-cmark read is text, ending before the
+        // closing tag.
+        let mut end = start;
+        while let Some((event, next)) = self.events.peek()
+            && Item::inline(event)
+            && next.end <= close
+        {
+            end = next.end;
+            self.events.next();
+        }
+        if self
+            .events
+            .peek()
+            .is_some_and(|(_, next)| next.start >= close)
+        {
+            end = close;
+        }
+        if start < end {
+            let raw = CowStr::Borrowed(&self.text[start..end]);
+            self.push(Event::InlineHtml(raw), start..end);
         }
     }
 

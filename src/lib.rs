@@ -107,6 +107,8 @@
 //! - [ ] The `parse_block_html` option.
 //! - [x] A line of only a span tag, like `<img>`, starting a paragraph.
 //! - [x] HTML spans, with Markdown in them.
+//! - [x] The HTML spans kramdown leaves raw, like `<kbd>` and `<code>`,
+//!   their text given out as it is.
 //!
 //! ## Text markup
 //!

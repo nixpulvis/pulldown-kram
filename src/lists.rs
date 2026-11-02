@@ -110,49 +110,13 @@ impl<'t> ListItems<'t> {
         }
         let len = items[start..item_end]
             .iter()
-            .position(|item| !Self::inline(&item.event))
+            .position(|item| !Item::inline(&item.event))
             .unwrap_or(item_end - start);
         (len > 0).then(|| First {
             items: start..start + len - 1,
             wrapped: false,
             range: items[start].range.start..items[start + len - 1].range.end,
         })
-    }
-
-    /// Whether `event` is part of a paragraph's text, not a block.
-    fn inline(event: &Event<'_>) -> bool {
-        match event {
-            Event::Start(tag) => matches!(
-                tag,
-                Tag::Emphasis
-                    | Tag::Strong
-                    | Tag::Strikethrough
-                    | Tag::Superscript
-                    | Tag::Subscript
-                    | Tag::Link { .. }
-                    | Tag::Image { .. }
-            ),
-            Event::End(tag) => matches!(
-                tag,
-                TagEnd::Emphasis
-                    | TagEnd::Strong
-                    | TagEnd::Strikethrough
-                    | TagEnd::Superscript
-                    | TagEnd::Subscript
-                    | TagEnd::Link
-                    | TagEnd::Image
-            ),
-            Event::Text(_)
-            | Event::Code(_)
-            | Event::InlineMath(_)
-            | Event::DisplayMath(_)
-            | Event::InlineHtml(_)
-            | Event::FootnoteReference(_)
-            | Event::SoftBreak
-            | Event::HardBreak
-            | Event::TaskListMarker(_) => true,
-            Event::Html(_) | Event::Rule => false,
-        }
     }
 
     /// Whether the line after the one `end` ends is blank, or blank but for

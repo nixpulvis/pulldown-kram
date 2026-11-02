@@ -535,6 +535,16 @@ fn backslash_line_breaks() {
 }
 
 #[test]
+fn raw_html_spans() {
+    let extension = Extension::new(Extensions::ENABLE_RAW_HTML_SPANS);
+    extension.reads(
+        "Run <kbd>--help</kbd> or <code>*a*</code>.\n",
+        "<p>Run <kbd>--help</kbd> or <code>*a*</code>.</p>\n",
+        "<p>Run <kbd>–help</kbd> or <code><em>a</em></code>.</p>\n",
+    );
+}
+
+#[test]
 fn extensions_own_their_options() {
     use pulldown_kram::pulldown_cmark::{BlockQuoteKind, Options as Cmark, Parser};
 
