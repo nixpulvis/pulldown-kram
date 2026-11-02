@@ -96,7 +96,8 @@
 //! reading them to make what it will of.
 //!
 //! - [x] HTML blocks, Markdown in them left as HTML.
-//! - [x] `markdown="1"` on a block element, its content read as Markdown.
+//! - [x] `markdown="1"` on a block element, its content read as Markdown
+//!   and the attribute left out.
 //! - [ ] `markdown="block"`, `markdown="span"` and `markdown="0"`. Their
 //!   content is left as HTML.
 //! - [ ] The `parse_block_html` option.

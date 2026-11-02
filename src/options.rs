@@ -123,7 +123,8 @@ bitflags! {
         /// Ids made from the text of headings without one, the way
         /// kramdown's GFM parser makes them. kramdown's `auto_ids` option.
         const ENABLE_AUTO_IDS = 1 << 11;
-        /// Markdown inside HTML elements marked `markdown="1"`.
+        /// Markdown inside HTML elements marked `markdown="1"`, the mark
+        /// left out of the HTML.
         const ENABLE_MARKDOWN_ATTRIBUTE = 1 << 12;
         /// A line of only a span tag, like `<img>`, starting a paragraph
         /// rather than an HTML block.

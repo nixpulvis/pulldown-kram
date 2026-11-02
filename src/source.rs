@@ -268,6 +268,30 @@ impl MarkdownElements {
             .match_indices("</")
             .any(|(i, _)| trimmed[i + "</".len()..].starts_with(name))
     }
+
+    /// `html` without the `markdown="1"` in its tags, which kramdown reads
+    /// and leaves out, or `None` if there's none to leave out.
+    pub fn without_attribute(html: &str) -> Option<String> {
+        const ATTRIBUTE: &str = "markdown=\"1\"";
+        let mut out = String::new();
+        let mut kept = 0;
+        for (i, _) in html.match_indices(ATTRIBUTE) {
+            let before = &html[..i];
+            let in_tag = before.rfind('<') > before.rfind('>');
+            let start = before
+                .trim_end_matches(|c: char| c.is_ascii_whitespace())
+                .len();
+            if in_tag && start < i {
+                out.push_str(&html[kept..start]);
+                kept = i + ATTRIBUTE.len();
+            }
+        }
+        if kept == 0 {
+            return None;
+        }
+        out.push_str(&html[kept..]);
+        Some(out)
+    }
 }
 
 impl Element {
@@ -464,6 +488,22 @@ mod tests {
         let (text, offsets) = MarkdownElements::separate("```\n<div markdown=\"1\">\n```\n");
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(offsets.is_empty());
+    }
+
+    #[test]
+    fn markdown_elements_without_attribute_takes_it_only_out_of_tags() {
+        assert_eq!(
+            MarkdownElements::without_attribute("<div class=\"a\"\n  markdown=\"1\" id=\"b\">\n"),
+            Some("<div class=\"a\" id=\"b\">\n".into())
+        );
+        assert_eq!(
+            MarkdownElements::without_attribute("<p markdown=\"1\">a</p><p markdown=\"1\">"),
+            Some("<p>a</p><p>".into())
+        );
+        // Not in text, nor as part of another attribute.
+        for html in ["<pre>x markdown=\"1\"</pre>", "<p data-markdown=\"1\">"] {
+            assert_eq!(MarkdownElements::without_attribute(html), None, "{html}");
+        }
     }
 
     #[test]

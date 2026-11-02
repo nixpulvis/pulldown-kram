@@ -27,3 +27,5 @@ The first release.
 - `html` writes a fence's language without the highlighter options after
   a `?`, so `php?start_inline=1` is the class `language-php`.
 - A header id with a `_` before punctuation, like `{#a_:b}`, is read.
+- HTML events are without the `markdown="1"` in their tags, which kramdown
+  reads and leaves out.

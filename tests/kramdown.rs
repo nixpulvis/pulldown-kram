@@ -336,9 +336,10 @@ fn auto_ids() {
 #[test]
 fn markdown_attribute() {
     let extension = Extension::new(Extensions::ENABLE_MARKDOWN_ATTRIBUTE);
+    // The attribute is read, and left out, as in kramdown.
     extension.reads(
         "<div markdown=\"1\">\n*a*\n</div>\n",
-        "<div markdown=\"1\">\n<p><em>a</em></p>\n</div>\n",
+        "<div>\n<p><em>a</em></p>\n</div>\n",
         "<div markdown=\"1\">\n*a*\n</div>\n",
     );
 }

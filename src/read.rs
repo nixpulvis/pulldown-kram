@@ -10,6 +10,7 @@ use pulldown_cmark::{CodeBlockKind, CowStr, Event, OffsetIter, Parser, Tag, TagE
 use crate::attributes::Lists;
 use crate::definitions::DefinitionLists;
 use crate::headings::HeaderIds;
+use crate::source::MarkdownElements;
 use crate::{Extensions, Options};
 
 /// An event, where in the source it was read, and what kramdown's
@@ -282,8 +283,8 @@ impl<'a> Reader<'a> {
 
     /// `event` as kramdown reads its source, where pulldown-cmark reads more
     /// into it: a single `~` and a single `$` are text, `$$` math in a
-    /// paragraph with more in it is inline, and math is without the
-    /// whitespace around it.
+    /// paragraph with more in it is inline, math is without the whitespace
+    /// around it, and HTML is without the `markdown="1"` kramdown reads.
     fn as_kramdown(&mut self, event: Event<'a>, range: Range<usize>) -> (Event<'a>, Range<usize>) {
         let text = |range: Range<usize>| {
             (
@@ -291,6 +292,19 @@ impl<'a> Reader<'a> {
                 range,
             )
         };
+        if let Event::Html(html) | Event::InlineHtml(html) = &event
+            && self
+                .kramdown
+                .contains(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
+            && let Some(without) = MarkdownElements::without_attribute(html)
+        {
+            let without = CowStr::from(without);
+            let event = match event {
+                Event::Html(_) => Event::Html(without),
+                _ => Event::InlineHtml(without),
+            };
+            return (event, range);
+        }
         match event {
             Event::Start(Tag::Strikethrough) => {
                 let doubled = self.text[range.clone()].starts_with("~~");
