@@ -1,0 +1,13 @@
+A paragraph.
+
+    ```
+
+*[HTML]: Hyper Text Markup Language
+
+HTML after code.
+
+1.  An item
+
+    ```
+    *[HTML]: in a fence
+    ```

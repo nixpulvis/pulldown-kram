@@ -155,9 +155,7 @@ impl Case {
             .with_kind("known failure");
         }
         Trial::test(name, move || match self.failure() {
-            Some(failure) => {
-                Err(format!("{failure}\nrerun with {UPDATE}=1 to accept it").into())
-            }
+            Some(failure) => Err(format!("{failure}\nrerun with {UPDATE}=1 to accept it").into()),
             None => Ok(()),
         })
     }
