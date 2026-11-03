@@ -126,6 +126,13 @@ impl<'a> AttributeLists<'a> {
         (len > 0).then_some((attribute_lists, len))
     }
 
+    /// The lists `text` is made of, if it's nothing else.
+    pub fn whole(text: &'a str) -> Option<Self> {
+        Self::parse(text)
+            .filter(|(_, len)| *len == text.len())
+            .map(|(attribute_lists, _)| attribute_lists)
+    }
+
     /// Adds `other`'s attributes, which win over any of the same name.
     pub fn extend(&mut self, other: Self) {
         self.attributes.extend(other.attributes);

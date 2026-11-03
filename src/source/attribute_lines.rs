@@ -14,7 +14,7 @@ impl AttributeLines {
     /// `markdown`, with a blank line after each unindented line of only
     /// attribute lists that code or a link definition comes right after,
     /// and the offsets of the lines added.
-    pub fn separate(markdown: &str) -> (Cow<'_, str>, Offsets) {
+    pub fn rewrite(markdown: &str) -> (Cow<'_, str>, Offsets) {
         if !markdown.contains("{:") {
             return (Cow::Borrowed(markdown), Offsets::default());
         }
@@ -42,8 +42,7 @@ impl AttributeLines {
                     || indent == 0 && (trimmed.starts_with(['<', '>']) || Self::item(trimmed));
                 after_blank = false;
             }
-            let only_lists =
-                || AttributeLists::parse(trimmed).is_some_and(|(_, len)| len == trimmed.len());
+            let only_lists = || AttributeLists::whole(trimmed).is_some();
             let block_next = lines.peek().is_some_and(|next| {
                 let indent = Self::indent(next);
                 let next = next.trim();
@@ -97,9 +96,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn attribute_lines_separate_ends_a_line_of_lists_before_code_or_a_link_definition() {
+    fn attribute_lines_rewrite_ends_a_line_of_lists_before_code_or_a_link_definition() {
         let src = "a\n{:.x}\n    b\n\n{:.y}\n\tc\n\n{:.z}\n[d]: e\n";
-        let (text, offsets) = AttributeLines::separate(src);
+        let (text, offsets) = AttributeLines::rewrite(src);
         assert_eq!(
             text,
             "a\n{:.x}\n\n    b\n\n{:.y}\n\n\tc\n\n{:.z}\n\n[d]: e\n"
@@ -111,7 +110,7 @@ mod tests {
         let src = "{:.x}\n  a\n\n{:.x}\n[^b]: c\n\n{:.x}\n[d] e: f\n\nb {:.x}\n    c\n\n\
             * d\n{:.x}\n    e\n\n> f\n{:.x}\n    g\n\n<div>\n{:.x}\n    h\n\n```\n{:.x}\n    i\n\
             ```\n\n  j\n {:.x}\n    k\n";
-        let (text, offsets) = AttributeLines::separate(src);
+        let (text, offsets) = AttributeLines::rewrite(src);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(offsets.is_empty());
     }

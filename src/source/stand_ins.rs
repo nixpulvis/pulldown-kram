@@ -5,6 +5,7 @@ use super::{Fence, Offsets, Rewrite};
 use crate::Extensions;
 use crate::abbreviations::Abbreviation;
 use crate::attributes::AttributeLists;
+use crate::text::Lead;
 
 /// What a stand-in, put in the text by [`StandIns`], stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,25 +111,13 @@ impl TableLine {
         let mut spans = Vec::new();
         let mut from = 0;
         while let Some(open) = line[from..].find('`').map(|at| from + at) {
-            let run = line[open..].len() - line[open..].trim_start_matches('`').len();
-            let start = open + run;
-            // The next run of as many backticks closes it.
-            let mut search = start;
-            let mut close = None;
-            while let Some(at) = line[search..].find('`').map(|at| search + at) {
-                let len = line[at..].len() - line[at..].trim_start_matches('`').len();
-                if len == run {
-                    close = Some(at);
-                    break;
-                }
-                search = at + len;
-            }
+            let (run, close) = code_span(line, open);
             match close {
                 Some(close) => {
-                    spans.push(start..close);
+                    spans.push(open + run..close);
                     from = close + run;
                 }
-                None => from = start,
+                None => from = open + run,
             }
         }
         spans
@@ -205,7 +194,7 @@ impl<'a> StandIns<'a> {
     /// `comment`, `nomarkdown` and abbreviation definition the `extensions`
     /// read, and a header row put in each table without one, with the
     /// offsets of the edits, the stand-ins, in order, and the abbreviations.
-    pub fn mark(markdown: &'a str, extensions: Extensions) -> Marked<'a> {
+    pub fn rewrite(markdown: &'a str, extensions: Extensions) -> Marked<'a> {
         let reads = |extension| extensions.contains(extension);
         let markers = reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS) && markdown.contains('^');
         let tags = (reads(Extensions::ENABLE_COMMENTS) || reads(Extensions::ENABLE_NOMARKDOWN))
@@ -249,12 +238,7 @@ impl<'a> StandIns<'a> {
     /// last line, after keeping all but that line's end.
     fn abbreviation(&mut self, lines: &[&'a str], start: usize) -> Option<usize> {
         self.abbreviations.as_ref()?;
-        let only_lists = |line: &'a str| {
-            let trimmed = line.trim();
-            AttributeLists::parse(trimmed)
-                .filter(|(_, len)| *len == trimmed.len())
-                .map(|(attribute_lists, _)| attribute_lists)
-        };
+        let only_lists = |line: &'a str| AttributeLists::whole(line.trim());
         let mut attribute_lists = AttributeLists::default();
         let mut end = start;
         while let Some(before) = lines.get(end).copied().and_then(only_lists) {
@@ -294,7 +278,11 @@ impl<'a> StandIns<'a> {
                 continue;
             }
             let trimmed = line.trim();
-            let lead = line.len() - line.trim_start_matches([' ', '>']).len();
+            let Lead {
+                len: lead,
+                indent,
+                quoted,
+            } = Lead::of(line);
             if trimmed.is_empty() {
                 html = false;
                 after_blank = true;
@@ -304,17 +292,14 @@ impl<'a> StandIns<'a> {
             }
             html |= after_blank && line[lead..].starts_with('<');
             after_blank = false;
-            // The spaces after the last quote marker.
-            let indent = lead - line[..lead].rfind('>').map_or(0, |i| i + 1);
             if html || indent >= 4 {
                 self.out.keep(line);
                 continue;
             }
             let content = line[lead..].trim_end();
-            boundary = content.starts_with('#')
-                || AttributeLists::parse(content).is_some_and(|(_, len)| len == content.len());
+            boundary = content.starts_with('#') || AttributeLists::whole(content).is_some();
             if starts_block
-                && !line[..lead].contains('>')
+                && !quoted
                 && let Some(end) = self.abbreviation(&lines, i - 1)
             {
                 let last = lines[end];
@@ -329,7 +314,6 @@ impl<'a> StandIns<'a> {
                 boundary = true;
                 continue;
             }
-            let quoted = line[..lead].contains('>');
             if !quoted && let Some(end) = self.block(&lines, i - 1, lead) {
                 let last = lines[end];
                 let last_content = last.trim_end().len();
@@ -367,7 +351,7 @@ impl<'a> StandIns<'a> {
             return None;
         }
         let after = lines.get(end).map_or("", |line| line.trim());
-        let lists_after = AttributeLists::parse(after).is_some_and(|(_, len)| len == after.len());
+        let lists_after = AttributeLists::whole(after).is_some();
         let rows = &lines[start..end];
         let separators = rows.iter().filter(|row| TableLine::separator(row)).count();
         if !(after.is_empty() || lists_after) || separators == rows.len() {
@@ -469,20 +453,9 @@ impl<'a> StandIns<'a> {
             match bytes[i] {
                 b'\\' => i += 2,
                 b'`' => {
-                    let run = line[i..].len() - line[i..].trim_start_matches('`').len();
-                    let closing = "`".repeat(run);
-                    i += run;
                     // Past the code span, if it's closed on the line.
-                    let mut from = i;
-                    while let Some(at) = line[from..].find(&closing) {
-                        let at = from + at;
-                        let after = line[at..].len() - line[at..].trim_start_matches('`').len();
-                        if after == run {
-                            i = at + run;
-                            break;
-                        }
-                        from = at + after;
-                    }
+                    let (run, close) = code_span(line, i);
+                    i = close.unwrap_or(i) + run;
                 }
                 b'{' => {
                     let rest = &line[i..];
@@ -591,19 +564,36 @@ impl<'a> StandIns<'a> {
     }
 }
 
+/// How long the run of backticks at `open` in `line` is, and where the
+/// next run of as many starts, closing the code span it opens, if one
+/// does on the line.
+fn code_span(line: &str, open: usize) -> (usize, Option<usize>) {
+    let run_at = |at: usize| line[at..].len() - line[at..].trim_start_matches('`').len();
+    let run = run_at(open);
+    let mut from = open + run;
+    while let Some(at) = line[from..].find('`').map(|at| from + at) {
+        let len = run_at(at);
+        if len == run {
+            return (run, Some(at));
+        }
+        from = at + len;
+    }
+    (run, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn stand_ins_mark_only_lines_of_an_end_of_block_marker() {
+    fn stand_ins_rewrite_only_lines_of_an_end_of_block_marker() {
         let src = "a\n^\n> b\n>  ^ \n";
         let Marked {
             text,
             offsets,
             marks,
             ..
-        } = StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
+        } = StandIns::rewrite(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
         assert_eq!(text, "a\n<!---->\n> b\n>  <!----> \n");
         let at: Vec<_> = marks.iter().map(|mark| (mark.at, mark.block)).collect();
         assert_eq!(at, [(2, true), (17, true)]);
@@ -612,13 +602,13 @@ mod tests {
         // Not with more on the line, as code, in a fence, or in HTML.
         let src = "^ a\n\n    ^\n\n```\n^\n```\n\n<div>\n^\n</div>\n";
         let Marked { text, marks, .. } =
-            StandIns::mark(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
+            StandIns::rewrite(src, Extensions::ENABLE_END_OF_BLOCK_MARKERS);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(marks.is_empty());
     }
 
     #[test]
-    fn stand_ins_mark_heads_tables_without_one() {
+    fn stand_ins_rewrite_heads_tables_without_one() {
         let tables = Extensions::ENABLE_TABLES | Extensions::ENABLE_TABLES_WITHOUT_HEADERS;
         let src = "| a | `b|c`\n| d |\n\n| e | f |\n|-+-:\n| g |\n";
         let Marked {
@@ -626,7 +616,7 @@ mod tests {
             offsets,
             marks,
             ..
-        } = StandIns::mark(src, tables);
+        } = StandIns::rewrite(src, tables);
         assert_eq!(
             text,
             "| | |\n|-|-|\n| a | `b\\|c`\n| d |\n\n| e | f |\n|-|-:|\n| g |\n"
@@ -639,13 +629,13 @@ mod tests {
         // or math, or escaped.
         let src =
             "a\n| b |\n\n| c |\nd\n\n|-|\n\n| e |\n| f |\n|-|\n\n`g|h`\n\n$$i|j$$\n\nk \\| l\n";
-        let Marked { text, marks, .. } = StandIns::mark(src, tables | Extensions::ENABLE_MATH);
+        let Marked { text, marks, .. } = StandIns::rewrite(src, tables | Extensions::ENABLE_MATH);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(marks.is_empty());
     }
 
     #[test]
-    fn stand_ins_mark_extensions_closed_and_escape_the_rest() {
+    fn stand_ins_rewrite_extensions_closed_and_escape_the_rest() {
         let src = "{::comment}\na {:/} b\n\n{:/comment}\n{::nomarkdown type=\"latex\"}\nc\n{:/}\n\
             d {::comment}e{:/} `{::comment}f{:/}` {::nomarkdown/} {:/} {::comment} {:/other}\n";
         let Marked {
@@ -653,7 +643,7 @@ mod tests {
             offsets,
             marks,
             ..
-        } = StandIns::mark(
+        } = StandIns::rewrite(
             src,
             Extensions::ENABLE_COMMENTS | Extensions::ENABLE_NOMARKDOWN,
         );
@@ -674,7 +664,7 @@ mod tests {
         assert_eq!(offsets.was(src, &text, "<kd:x> `"), "{::comment}e{:/} `");
         offsets.assert_fit(src, &text);
         // Only the extensions read: here, the two `nomarkdown`.
-        let marks = StandIns::mark(src, Extensions::ENABLE_NOMARKDOWN).marks;
+        let marks = StandIns::rewrite(src, Extensions::ENABLE_NOMARKDOWN).marks;
         assert_eq!(marks.len(), 2);
     }
 }

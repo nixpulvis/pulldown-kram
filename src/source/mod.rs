@@ -10,14 +10,40 @@ mod offsets;
 mod span_tags;
 mod stand_ins;
 
-pub(crate) use attribute_lines::AttributeLines;
-pub(crate) use definition_lines::DefinitionLines;
-pub(crate) use html_blocks::HtmlBlocks;
+use std::borrow::Cow;
+
+use attribute_lines::AttributeLines;
+use definition_lines::DefinitionLines;
+use html_blocks::HtmlBlocks;
 pub(crate) use markdown_elements::MarkdownElements;
 pub(crate) use offsets::Offsets;
 use offsets::Rewrite;
-pub(crate) use span_tags::SpanTags;
+use span_tags::SpanTags;
 pub(crate) use stand_ins::{Mark, Marked, StandIn, StandIns};
+
+use crate::Extensions;
+use crate::text::Lead;
+
+/// A rewrite of some Markdown, and the offsets of its edits. It borrows
+/// the Markdown back when there's nothing to change.
+type Rewriter = for<'s> fn(&'s str) -> (Cow<'s, str>, Offsets);
+
+/// The rewrites made after the stand-ins go in, in the order they're made,
+/// each with the extension it's for. Each reads the text the one before it
+/// wrote.
+pub(crate) const REWRITES: [(Extensions, Rewriter); 5] = [
+    (
+        Extensions::ENABLE_MARKDOWN_ATTRIBUTE,
+        MarkdownElements::rewrite,
+    ),
+    (Extensions::ENABLE_HTML_BLOCK_ENDS, HtmlBlocks::rewrite),
+    (Extensions::ENABLE_SPAN_TAG_PARAGRAPHS, SpanTags::rewrite),
+    (Extensions::ENABLE_BLOCK_ATTRIBUTES, AttributeLines::rewrite),
+    (
+        Extensions::ENABLE_DEFINITION_LISTS,
+        DefinitionLines::rewrite,
+    ),
+];
 
 /// The tag at the start of a line.
 struct HtmlTag<'a> {
@@ -66,10 +92,9 @@ impl Fence {
     /// characters or more.
     fn read(&mut self, line: &str) -> bool {
         let text = line.trim_end();
-        let lead = text.len() - text.trim_start_matches([' ', '>']).len();
-        // The spaces after the last quote marker.
-        let mut indent = lead - text[..lead].rfind('>').map_or(0, |i| i + 1);
-        let mut rest = &text[lead..];
+        let lead = Lead::of(text);
+        let mut indent = lead.indent;
+        let mut rest = &text[lead.len..];
         if let Some((c, len)) = self.open {
             let run = rest.len() - rest.trim_start_matches(c).len();
             let only_marks = rest.trim_start_matches(c).trim().is_empty();

@@ -6,6 +6,7 @@ use std::ops::Range;
 use pulldown_cmark::{Event, Tag, TagEnd};
 
 use crate::read::Item;
+use crate::text::{self, Lines};
 
 /// The lists of a document, read as kramdown reads them.
 pub(crate) struct ListItems<'t> {
@@ -122,19 +123,12 @@ impl<'t> ListItems<'t> {
     /// Whether the line after the one `end` ends is blank, or blank but for
     /// quote markers. The text's end isn't a blank line.
     fn blank_line_after(&self, end: usize) -> bool {
+        let lines = Lines(self.text);
         let next = if self.text[..end].ends_with('\n') {
             end
         } else {
-            match self.text[end..].find('\n') {
-                Some(i) => end + i + 1,
-                None => return false,
-            }
+            lines.next(end)
         };
-        let rest = &self.text[next..];
-        let line = rest.split('\n').next().unwrap_or(rest);
-        !rest.is_empty()
-            && line
-                .trim_matches(|c: char| c.is_whitespace() || c == '>')
-                .is_empty()
+        next < self.text.len() && text::is_blank(lines.rest_of_line(next))
     }
 }

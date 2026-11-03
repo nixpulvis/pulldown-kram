@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use super::{Fence, Offsets, Rewrite};
+use crate::text::Lead;
 
 /// kramdown reads two things about definitions differently from
 /// pulldown-cmark, which this rewrites the lines for. A `:` more than one
@@ -51,26 +52,25 @@ impl DefinitionLines {
             return;
         }
         let text = line.trim_end_matches(['\n', '\r']);
-        let lead = text.len() - text.trim_start_matches([' ', '>']).len();
-        let rest = &text[lead..];
+        let lead = Lead::of(text);
+        let rest = &text[lead.len..];
         if rest.trim().is_empty() {
             self.blanks += 1;
             self.keep(line, shift);
             return;
         }
-        // The spaces after the last quote marker.
-        let indent = lead - text[..lead].rfind('>').map_or(0, |i| i + 1);
+        let indent = lead.indent;
         let marker = indent <= 3
             && rest
                 .strip_prefix(':')
                 .is_some_and(|after| after.is_empty() || after.starts_with([' ', '\t']));
         if marker && self.blanks >= 2 && !self.in_definition {
-            self.out.keep(&line[..lead]);
+            self.out.keep(&line[..lead.len]);
             self.out.insert("\\");
-            self.out.keep(&line[lead..]);
+            self.out.keep(&line[lead.len..]);
         } else if marker {
             let first_line_empty = rest[1..].trim().is_empty();
-            let quoted = text[..lead].contains('>');
+            let quoted = lead.quoted;
             if first_line_empty && !quoted && self.blanks == 0 && self.out.read > 0 && indent < 2 {
                 self.shift = Some((2 - indent, false));
             }

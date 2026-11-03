@@ -5,6 +5,7 @@
 use pulldown_cmark::{Event, Tag, TagEnd};
 
 use crate::read::Item;
+use crate::text::{self, Lines};
 
 /// The definition lists of a document, read as kramdown reads them.
 pub(crate) struct DefinitionLists<'t> {
@@ -83,14 +84,10 @@ impl<'t> DefinitionLists<'t> {
     /// Whether the line before the one `offset` is on is blank, or blank
     /// but for quote markers.
     fn blank_line_before(&self, offset: usize) -> bool {
-        let line = self.text[..offset].rfind('\n').map_or(0, |i| i + 1);
-        let Some(before) = self.text[..line].strip_suffix('\n') else {
-            return false;
-        };
-        let start = before.rfind('\n').map_or(0, |i| i + 1);
-        before[start..]
-            .trim_matches(|c: char| c.is_whitespace() || c == '>')
-            .is_empty()
+        let lines = Lines(self.text);
+        lines
+            .previous(lines.start(offset))
+            .is_some_and(|before| text::is_blank(lines.rest_of_line(before)))
     }
 }
 

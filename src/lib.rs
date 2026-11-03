@@ -206,6 +206,7 @@ mod list_items;
 mod options;
 mod read;
 mod source;
+mod text;
 mod toc;
 
 use std::borrow::Cow;
@@ -218,10 +219,7 @@ pub use attributes::Attributes;
 pub use options::{Extensions, Options};
 pub use pulldown_cmark;
 use pulldown_cmark::Event;
-use source::{
-    AttributeLines, DefinitionLines, HtmlBlocks, Mark, MarkdownElements, Marked, Offsets, SpanTags,
-    StandIns,
-};
+use source::{Mark, Marked, Offsets, REWRITES, StandIns};
 
 /// Markdown written for kramdown, ready to read.
 #[derive(Debug, Clone)]
@@ -236,55 +234,30 @@ pub struct Document<'a> {
 }
 
 impl<'a> Document<'a> {
-    /// Reads `markdown` with `options`, which may be just pulldown-cmark's,
-    /// for every kramdown extension, or just the [`Extensions`].
+    /// Reads `markdown` with `options`, which are either just the
+    /// [`Extensions`] or [`Options`] with more of pulldown-cmark's.
     pub fn new(markdown: &'a str, options: impl Into<Options>) -> Self {
         let options = options.into();
-        let reads = |extension| options.kramdown.contains(extension);
-        // Rewrite what CommonMark reads differently, before it's read: first
-        // the stand-ins, for what they stand for to be in the markdown.
+        // The stand-ins go in first, as what they stand for borrows from
+        // `markdown`, not from a rewrite of it.
         let Marked {
             mut text,
             mut offsets,
             mut marks,
             abbreviations,
-        } = StandIns::mark(markdown, options.kramdown);
-        // Moves the marks past `edits`, and adds them to the offsets.
-        let mut then = |offsets: &mut Offsets, edits: Offsets| {
+        } = StandIns::rewrite(markdown, options.kramdown);
+        for (extension, rewrite) in REWRITES {
+            if !options.kramdown.contains(extension) {
+                continue;
+            }
+            let (Cow::Owned(rewritten), edits) = rewrite(&text) else {
+                continue;
+            };
             for mark in &mut marks {
                 mark.at = edits.moved(mark.at);
             }
-            *offsets = std::mem::take(offsets).then(edits);
-        };
-        if reads(Extensions::ENABLE_MARKDOWN_ATTRIBUTE)
-            && let (Cow::Owned(separated), edits) = MarkdownElements::separate(&text)
-        {
-            text = Cow::Owned(separated);
-            then(&mut offsets, edits);
-        }
-        if reads(Extensions::ENABLE_HTML_BLOCK_ENDS)
-            && let (Cow::Owned(separated), edits) = HtmlBlocks::separate(&text)
-        {
-            text = Cow::Owned(separated);
-            then(&mut offsets, edits);
-        }
-        if reads(Extensions::ENABLE_SPAN_TAG_PARAGRAPHS)
-            && let (Cow::Owned(joined), edits) = SpanTags::join(&text)
-        {
-            text = Cow::Owned(joined);
-            then(&mut offsets, edits);
-        }
-        if reads(Extensions::ENABLE_BLOCK_ATTRIBUTES)
-            && let (Cow::Owned(separated), edits) = AttributeLines::separate(&text)
-        {
-            text = Cow::Owned(separated);
-            then(&mut offsets, edits);
-        }
-        if reads(Extensions::ENABLE_DEFINITION_LISTS)
-            && let (Cow::Owned(rewritten), edits) = DefinitionLines::rewrite(&text)
-        {
+            offsets = offsets.then(edits);
             text = Cow::Owned(rewritten);
-            then(&mut offsets, edits);
         }
         Self {
             text,

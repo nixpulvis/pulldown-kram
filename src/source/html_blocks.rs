@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::{Fence, Offsets, Rewrite};
+use super::{Fence, HtmlTag, Offsets, Rewrite};
 
 /// kramdown ends an HTML block with the end tag of the element starting
 /// it, or the end of a comment, reading any text after it as Markdown.
@@ -66,7 +66,7 @@ impl HtmlBlocks {
 
     /// `markdown`, with each HTML block ended where kramdown ends it, and
     /// the offsets of the lines added.
-    pub fn separate(markdown: &str) -> (Cow<'_, str>, Offsets) {
+    pub fn rewrite(markdown: &str) -> (Cow<'_, str>, Offsets) {
         if !markdown.contains('<') {
             return (Cow::Borrowed(markdown), Offsets::default());
         }
@@ -153,13 +153,10 @@ impl HtmlBlocks {
                     Some((n, from + at + "-->".len()))
                 });
         }
-        let name_len = content[1..]
-            .find(|c: char| !c.is_ascii_alphanumeric())
-            .unwrap_or(content.len() - 1);
-        let name = &content[1..1 + name_len];
+        let tag = HtmlTag::starting(content).filter(|tag| !tag.closing)?;
         let element = Self::ELEMENTS
             .into_iter()
-            .find(|element| element.eq_ignore_ascii_case(name))?;
+            .find(|element| element.eq_ignore_ascii_case(tag.name))?;
         let opening = &content[..content.find('>')? + 1];
         if opening.contains("markdown=") {
             return None;
@@ -207,9 +204,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn html_blocks_separate_ends_a_block_at_its_end_tag() {
+    fn html_blocks_rewrite_ends_a_block_at_its_end_tag() {
         let src = "<DIV>\n<div>a</div>\n</div>\nb\n<p>c</p> <hr> d\n<!-- e --> f\n";
-        let (text, offsets) = HtmlBlocks::separate(src);
+        let (text, offsets) = HtmlBlocks::rewrite(src);
         assert_eq!(
             text,
             "<DIV>\n<div>a</div>\n</div>\n\nb\n<p>c</p>\n\n <hr>\n\n d\n<!-- e -->\n\n f\n"
@@ -217,7 +214,7 @@ mod tests {
         offsets.assert_fit(src, &text);
         // Not span elements, ones never ended, or what a blank line ends.
         let src = "<span>a</span> b\n<div>\nc\n\n<p>d</p>\n\ne\n";
-        let (text, offsets) = HtmlBlocks::separate(src);
+        let (text, offsets) = HtmlBlocks::rewrite(src);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(offsets.is_empty());
     }

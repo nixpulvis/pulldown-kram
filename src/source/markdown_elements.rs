@@ -22,7 +22,7 @@ struct Element {
 impl MarkdownElements {
     /// `markdown`, with blank lines around what's inside each
     /// `markdown="1"` element, and the offsets of the lines added.
-    pub fn separate(markdown: &str) -> (Cow<'_, str>, Offsets) {
+    pub fn rewrite(markdown: &str) -> (Cow<'_, str>, Offsets) {
         if !markdown.contains("markdown=\"1\"") {
             return (Cow::Borrowed(markdown), Offsets::default());
         }
@@ -130,27 +130,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn markdown_elements_separate_splits_markdown_from_tags() {
+    fn markdown_elements_rewrite_splits_markdown_from_tags() {
         let src = "<div markdown=\"1\">\n```rust\n</div>\n```\n<div>\n</div>\n</div>\nafter\n";
         assert_eq!(
-            MarkdownElements::separate(src).0,
+            MarkdownElements::rewrite(src).0,
             "<div markdown=\"1\">\n\n```rust\n</div>\n```\n<div>\n</div>\n\n</div>\nafter\n"
         );
         // Elements closed on their own line, or only alike in their start,
         // don't nest.
         let src = "<p markdown=\"1\">\n<p>x</p>\n<pre>\n</pre>\n</p>\n";
         assert_eq!(
-            MarkdownElements::separate(src).0,
+            MarkdownElements::rewrite(src).0,
             "<p markdown=\"1\">\n\n<p>x</p>\n<pre>\n</pre>\n\n</p>\n"
         );
         // A fence only closes with as many marks.
         let src = "<div markdown=\"1\">\n````\n```\n</div>\n````\n</div>\n";
         assert_eq!(
-            MarkdownElements::separate(src).0,
+            MarkdownElements::rewrite(src).0,
             "<div markdown=\"1\">\n\n````\n```\n</div>\n````\n\n</div>\n"
         );
         // Nothing to separate in a fence.
-        let (text, offsets) = MarkdownElements::separate("```\n<div markdown=\"1\">\n```\n");
+        let (text, offsets) = MarkdownElements::rewrite("```\n<div markdown=\"1\">\n```\n");
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(offsets.is_empty());
     }
@@ -172,9 +172,9 @@ mod tests {
     }
 
     #[test]
-    fn markdown_elements_separate_gives_an_element_ending_the_input_its_blank_line() {
+    fn markdown_elements_rewrite_gives_an_element_ending_the_input_its_blank_line() {
         let src = "<div markdown=\"1\">";
-        let (text, offsets) = MarkdownElements::separate(src);
+        let (text, offsets) = MarkdownElements::rewrite(src);
         assert_eq!(text, "<div markdown=\"1\">\n\n");
         // The added lines are where the input ends.
         assert_eq!(

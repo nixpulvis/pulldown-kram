@@ -17,6 +17,7 @@ use crate::definition_lists::DefinitionLists;
 use crate::headings::HeaderIds;
 use crate::list_items::ListItems;
 use crate::source::{Mark, MarkdownElements, StandIn};
+use crate::text::{self, Lines};
 use crate::{Extensions, Options};
 pub(crate) use item::Item;
 use link_definitions::LinkDefinitions;
@@ -323,10 +324,7 @@ impl<'a> Reader<'a> {
         }
         let mark = marks.get(self.next_mark)?;
         let starts = if block {
-            mark.at < range.end
-                && self.text[range.start..mark.at]
-                    .trim_matches(|c: char| c.is_whitespace() || c == '>')
-                    .is_empty()
+            mark.at < range.end && text::is_blank(&self.text[range.start..mark.at])
         } else {
             mark.at == range.start
         };
@@ -354,10 +352,7 @@ impl<'a> Reader<'a> {
     /// its items, while pulldown-cmark's ends at each change.
     fn continues(&self, end: TagEnd, start: usize) -> bool {
         self.pending.last().is_some_and(|last| {
-            last.event == Event::End(end)
-                && self.text[last.range.end..start]
-                    .trim_matches(|c: char| c.is_whitespace() || c == '>')
-                    .is_empty()
+            last.event == Event::End(end) && text::is_blank(&self.text[last.range.end..start])
         })
     }
 
@@ -474,8 +469,7 @@ impl<'a> Reader<'a> {
         let next = next
             .trim_start_matches(|c: char| c.is_whitespace() || c == '>')
             .trim_end();
-        rest.trim().is_empty()
-            && AttributeLists::parse(next).is_some_and(|(_, len)| len > 0 && len == next.len())
+        rest.trim().is_empty() && AttributeLists::whole(next).is_some()
     }
 
     /// Gives `lists`, `len` bytes at the start of `event`'s text, to what
@@ -554,13 +548,10 @@ impl<'a> Reader<'a> {
     /// before the lists between `start` and `end` on their line, and nothing
     /// after.
     fn alone_on_line(&self, start: usize, end: usize) -> Option<Target> {
-        let line_start = self.text[..start].rfind('\n').map_or(0, |i| i + 1);
-        let lead = &self.text[line_start..start];
-        let line_end = self.text[end..]
-            .find('\n')
-            .map_or(self.text.len(), |i| end + i);
-        let quoted = lead.chars().all(|c| c.is_whitespace() || c == '>');
-        (quoted && self.text[end..line_end].trim().is_empty()).then_some(Target::Line {
+        let lines = Lines(self.text);
+        let lead = &self.text[lines.start(start)..start];
+        let after = lines.rest_of_line(end);
+        (text::is_blank(lead) && after.trim().is_empty()).then_some(Target::Line {
             lazy: lead.is_empty(),
         })
     }

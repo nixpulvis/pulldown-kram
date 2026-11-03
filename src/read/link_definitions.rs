@@ -1,6 +1,7 @@
 use pulldown_cmark::{Event, LinkType, RefDefs, Tag};
 
 use crate::attributes::AttributeLists;
+use crate::text::Lines;
 
 /// The attribute lists kramdown gives link definitions, for the links that
 /// use them: on the lines right after one, or before it, right before or
@@ -61,7 +62,7 @@ impl<'a> LinkDefinitions<'a> {
                 found.lines.push(start);
                 attribute_lists.extend(before);
             }
-            let mut line = Self::line_end(text, span.end.saturating_sub(1));
+            let mut line = Lines(text).next(span.end.saturating_sub(1));
             while let Some((start, after, end)) = Self::attribute_lists_on(text, line) {
                 found.lines.push(start);
                 attribute_lists.extend(after);
@@ -80,27 +81,23 @@ impl<'a> LinkDefinitions<'a> {
     /// The lists before the definition at `start`, on the lines right
     /// before it, or alone between blocks before it, from the first, each
     /// with where it starts. Lines before `taken` are another's.
-    pub(super) fn before(
-        text: &'a str,
-        start: usize,
-        taken: usize,
-    ) -> Vec<(usize, AttributeLists<'a>)> {
+    fn before(text: &'a str, start: usize, taken: usize) -> Vec<(usize, AttributeLists<'a>)> {
         let mut attribute_lists = Vec::new();
-        let mut above = Self::line_before(text, Self::line_start(text, start));
+        let mut above = Lines(text).previous(Lines(text).start(start));
         while let Some(line) = above
-            && text[line..Self::line_end(text, line)].trim().is_empty()
+            && Lines(text).rest_of_line(line).trim().is_empty()
         {
-            above = Self::line_before(text, line);
+            above = Lines(text).previous(line);
         }
         while let Some(line) = above
             && line >= taken
             && let Some((start, found, _)) = Self::attribute_lists_on(text, line)
         {
             attribute_lists.push((start, found));
-            above = Self::line_before(text, line);
+            above = Lines(text).previous(line);
         }
         // Right after another block, they're for it.
-        if above.is_some_and(|line| !text[line..Self::line_end(text, line)].trim().is_empty()) {
+        if above.is_some_and(|line| !Lines(text).rest_of_line(line).trim().is_empty()) {
             return Vec::new();
         }
         attribute_lists.reverse();
@@ -109,28 +106,13 @@ impl<'a> LinkDefinitions<'a> {
 
     /// The lists alone on the line starting at `line`, if any, with where
     /// they start and where the next line starts.
-    pub(super) fn attribute_lists_on(
+    fn attribute_lists_on(
         text: &'a str,
         line: usize,
     ) -> Option<(usize, AttributeLists<'a>, usize)> {
-        let end = Self::line_end(text, line);
-        let content = text.get(line..end)?;
-        let trimmed = content.trim();
+        let content = Lines(text).rest_of_line(line);
         let indent = content.len() - content.trim_start().len();
-        let (attribute_lists, len) = AttributeLists::parse(trimmed).filter(|_| indent < 4)?;
-        (len == trimmed.len()).then_some((line + indent, attribute_lists, end))
-    }
-
-    pub(super) fn line_start(text: &str, at: usize) -> usize {
-        text[..at].rfind('\n').map_or(0, |i| i + 1)
-    }
-
-    /// Where the line after the one `at` is on starts, or the text ends.
-    pub(super) fn line_end(text: &str, at: usize) -> usize {
-        text[at..].find('\n').map_or(text.len(), |i| at + i + 1)
-    }
-
-    pub(super) fn line_before(text: &str, line: usize) -> Option<usize> {
-        (line > 0).then(|| Self::line_start(text, line - 1))
+        let attribute_lists = AttributeLists::whole(content.trim()).filter(|_| indent < 4)?;
+        Some((line + indent, attribute_lists, Lines(text).next(line)))
     }
 }

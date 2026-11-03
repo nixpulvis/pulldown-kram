@@ -226,15 +226,15 @@ mod tests {
 
     /// `src` rewritten by two rewrites, and its offsets.
     fn rewrite(src: &str) -> (String, Offsets) {
-        let (separated, first) = MarkdownElements::separate(src);
-        let (joined, second) = SpanTags::join(&separated);
+        let (separated, first) = MarkdownElements::rewrite(src);
+        let (joined, second) = SpanTags::rewrite(&separated);
         (joined.into_owned(), first.then(second))
     }
 
     #[test]
     fn offsets_original_skips_added_blank_lines() {
         let src = "<div markdown=\"1\">\nä *ö*\n</div>\nü\n";
-        let (text, offsets) = MarkdownElements::separate(src);
+        let (text, offsets) = MarkdownElements::rewrite(src);
         assert_eq!(text, "<div markdown=\"1\">\n\nä *ö*\n\n</div>\nü\n");
         for needle in ["<div markdown=\"1\">\n", "ä *ö*\n", "</div>\n", "ü\n"] {
             assert_eq!(offsets.was(src, &text, needle), needle);
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn offsets_original_takes_in_joined_line_ends() {
         let src = "<img alt=\"é\" />  \r\nä\n<b>\nö\n";
-        let (text, offsets) = SpanTags::join(src);
+        let (text, offsets) = SpanTags::rewrite(src);
         assert_eq!(text, "<img alt=\"é\" /> ä\n<b> ö\n");
         for needle in ["<img alt=\"é\" />", "ä\n", "<b>", "ö\n"] {
             assert_eq!(offsets.was(src, &text, needle), needle);

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::{Fence, Offsets, Rewrite};
+use super::{Fence, HtmlTag, Offsets, Rewrite};
 
 /// kramdown reads a line of only a span-level tag, like `<img>` or `<span>`,
 /// as the start of a paragraph, Markdown on the lines after it included.
@@ -20,7 +20,7 @@ impl SpanTags {
 
     /// `markdown`, with each line of only a span tag joined onto the next
     /// line, when that's text, and the offsets of the joins.
-    pub fn join(markdown: &str) -> (Cow<'_, str>, Offsets) {
+    pub fn rewrite(markdown: &str) -> (Cow<'_, str>, Offsets) {
         let mut out = Rewrite::of(markdown);
         let mut fence = Fence::default();
         let mut lines = markdown.split_inclusive('\n').peekable();
@@ -48,21 +48,18 @@ impl SpanTags {
     /// indented enough to be code.
     fn alone(line: &str) -> bool {
         let indent = line.len() - line.trim_start().len();
-        let Some(tag) = line
-            .trim()
+        let trimmed = line.trim();
+        let one_tag = trimmed
             .strip_prefix('<')
             .and_then(|tag| tag.strip_suffix('>'))
-            .filter(|tag| indent < 4 && !tag.contains(['<', '>']))
-        else {
-            return false;
-        };
-        let name: String = tag
-            .trim_start_matches('/')
-            .chars()
-            .take_while(char::is_ascii_alphanumeric)
-            .map(|c| c.to_ascii_lowercase())
-            .collect();
-        Self::NAMES.contains(&name.as_str())
+            .is_some_and(|tag| !tag.contains(['<', '>']));
+        indent < 4
+            && one_tag
+            && HtmlTag::starting(trimmed).is_some_and(|tag| {
+                Self::NAMES
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(tag.name))
+            })
     }
 }
 
@@ -71,29 +68,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn span_tags_join_starts_paragraphs_with_span_tags() {
+    fn span_tags_rewrite_starts_paragraphs_with_span_tags() {
         assert_eq!(
-            SpanTags::join("<img src=\"a\" />\n![b](c)\n").0,
+            SpanTags::rewrite("<img src=\"a\" />\n![b](c)\n").0,
             "<img src=\"a\" /> ![b](c)\n"
         );
         assert_eq!(
-            SpanTags::join("<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n").0,
+            SpanTags::rewrite("<span class=\"g\">\n![a](b)\n![c](d)\n</span>\n").0,
             "<span class=\"g\"> ![a](b)\n![c](d)\n</span>\n"
         );
         // Not block elements, tags before a blank line or a fence, or code.
         let src = "<div>\n*a*\n</div>\n\n<img />\n\n<b>\n```\n<b>\nx\n```\n    <b>\n    x\n";
-        let (text, offsets) = SpanTags::join(src);
+        let (text, offsets) = SpanTags::rewrite(src);
         assert!(matches!(text, Cow::Borrowed(_)));
         assert!(offsets.is_empty());
     }
 
     #[test]
-    fn span_tags_join_ignores_case_and_joins_closing_tags() {
-        assert_eq!(SpanTags::join("<IMG src=x>\na\n").0, "<IMG src=x> a\n");
-        assert_eq!(SpanTags::join("</span>\na\n").0, "</span> a\n");
+    fn span_tags_rewrite_ignores_case_and_joins_closing_tags() {
+        assert_eq!(SpanTags::rewrite("<IMG src=x>\na\n").0, "<IMG src=x> a\n");
+        assert_eq!(SpanTags::rewrite("</span>\na\n").0, "</span> a\n");
         // Not two tags on a line.
         assert!(matches!(
-            SpanTags::join("<span><b>\na\n").0,
+            SpanTags::rewrite("<span><b>\na\n").0,
             Cow::Borrowed(_)
         ));
     }
