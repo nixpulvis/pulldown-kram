@@ -100,30 +100,30 @@ impl<'a> Attributes<'a> {
 
 /// What one or more attribute lists in a row, like `{:#id}{:.new}`, hold.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Lists<'a> {
+pub(crate) struct AttributeLists<'a> {
     pub attributes: Attributes<'a>,
     /// Whether one names `toc`, asking for a table of contents.
     pub toc: bool,
 }
 
-impl<'a> Lists<'a> {
+impl<'a> AttributeLists<'a> {
     /// The lists at the start of `text`, if it starts with one, and how
     /// many bytes they take. Definitions, `{:name: …}`, and the tags of
     /// kramdown's extensions, `{::name}` and `{:/name}`, are read but give
     /// nothing, as neither is supported. A tag of any other extension isn't
     /// a list, and stays text, as in kramdown.
     pub fn parse(text: &'a str) -> Option<(Self, usize)> {
-        let mut lists = Self::default();
+        let mut attribute_lists = Self::default();
         let mut rest = text;
         while let Some((list, after)) = List::first(rest) {
             if list.is_unknown_extension() {
                 break;
             }
-            lists.read(list);
+            attribute_lists.read(list);
             rest = after;
         }
         let len = text.len() - rest.len();
-        (len > 0).then_some((lists, len))
+        (len > 0).then_some((attribute_lists, len))
     }
 
     /// Adds `other`'s attributes, which win over any of the same name.
@@ -310,10 +310,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lists_parse_reads_ids_classes_and_pairs() {
+    fn attribute_lists_parse_reads_ids_classes_and_pairs() {
         let text = r#"{:.new}{: .old.x #id k="v \" \}" j='w'} rest"#;
-        let (lists, len) = Lists::parse(text).unwrap();
-        let attributes = lists.attributes;
+        let (attribute_lists, len) = AttributeLists::parse(text).unwrap();
+        let attributes = attribute_lists.attributes;
         assert_eq!(attributes.classes, ["new".into(), "old".into(), "x".into()]);
         assert_eq!(attributes.id.as_deref(), Some("id"));
         assert_eq!(
@@ -327,8 +327,8 @@ mod tests {
     }
 
     #[test]
-    fn lists_parse_later_attributes_win() {
-        let attributes = Lists::parse(r#"{: .a class="b c" .d id="x" #y k="1" k="2"}"#)
+    fn attribute_lists_parse_later_attributes_win() {
+        let attributes = AttributeLists::parse(r#"{: .a class="b c" .d id="x" #y k="1" k="2"}"#)
             .unwrap()
             .0
             .attributes;
@@ -338,13 +338,13 @@ mod tests {
     }
 
     #[test]
-    fn lists_parse_names_toc() {
-        assert!(Lists::parse("{:toc}").unwrap().0.toc);
-        assert!(!Lists::parse("{:.toc}").unwrap().0.toc);
+    fn attribute_lists_parse_names_toc() {
+        assert!(AttributeLists::parse("{:toc}").unwrap().0.toc);
+        assert!(!AttributeLists::parse("{:.toc}").unwrap().0.toc);
     }
 
     #[test]
-    fn lists_parse_definitions_and_extensions_give_nothing() {
+    fn attribute_lists_parse_definitions_and_extensions_give_nothing() {
         for list in [
             "{:ref: .x}",
             "{::comment}",
@@ -352,44 +352,47 @@ mod tests {
             "{::options a=\"b\" /}",
             "{::}",
         ] {
-            let (lists, len) = Lists::parse(list).unwrap();
-            assert!(lists.attributes.is_empty(), "{list}");
+            let (attribute_lists, len) = AttributeLists::parse(list).unwrap();
+            assert!(attribute_lists.attributes.is_empty(), "{list}");
             assert_eq!(len, list.len());
         }
     }
 
     #[test]
-    fn lists_parse_leaves_unknown_extensions_as_text() {
+    fn attribute_lists_parse_leaves_unknown_extensions_as_text() {
         for list in ["{::something}", "{::something/}", "{:/something}"] {
-            assert!(Lists::parse(list).is_none(), "{list}");
+            assert!(AttributeLists::parse(list).is_none(), "{list}");
         }
-        let (_, len) = Lists::parse("{:.a}{::something}").unwrap();
+        let (_, len) = AttributeLists::parse("{:.a}{::something}").unwrap();
         assert_eq!(len, "{:.a}".len());
     }
 
     #[test]
-    fn lists_parse_skips_what_isnt_an_id_or_class() {
-        let attributes = Lists::parse("{: #1x .a#  bare k=v}").unwrap().0.attributes;
+    fn attribute_lists_parse_skips_what_isnt_an_id_or_class() {
+        let attributes = AttributeLists::parse("{: #1x .a#  bare k=v}")
+            .unwrap()
+            .0
+            .attributes;
         assert_eq!(attributes, Attributes::default());
     }
 
     #[test]
-    fn lists_parse_needs_a_closing_brace_on_the_line() {
-        assert!(Lists::parse("{:.a").is_none());
-        assert!(Lists::parse("{:.a\n}").is_none());
-        assert!(Lists::parse("text {:.a}").is_none());
+    fn attribute_lists_parse_needs_a_closing_brace_on_the_line() {
+        assert!(AttributeLists::parse("{:.a").is_none());
+        assert!(AttributeLists::parse("{:.a\n}").is_none());
+        assert!(AttributeLists::parse("text {:.a}").is_none());
     }
 
     #[test]
-    fn lists_parse_stops_at_a_list_left_open() {
-        let (lists, len) = Lists::parse("{:.a}{:.b").unwrap();
-        assert_eq!(lists.attributes.classes, ["a".into()]);
+    fn attribute_lists_parse_stops_at_a_list_left_open() {
+        let (attribute_lists, len) = AttributeLists::parse("{:.a}{:.b").unwrap();
+        assert_eq!(attribute_lists.attributes.classes, ["a".into()]);
         assert_eq!(len, "{:.a}".len());
     }
 
     #[test]
-    fn lists_parse_unescapes_only_the_quote_and_brace() {
-        let attributes = Lists::parse(r#"{:k="a\b\'\}" j='\''}"#)
+    fn attribute_lists_parse_unescapes_only_the_quote_and_brace() {
+        let attributes = AttributeLists::parse(r#"{:k="a\b\'\}" j='\''}"#)
             .unwrap()
             .0
             .attributes;
@@ -403,37 +406,40 @@ mod tests {
     }
 
     #[test]
-    fn lists_parse_ids_start_with_an_ascii_letter_but_classes_need_not() {
-        let attributes = Lists::parse("{: #über .ünï}").unwrap().0.attributes;
+    fn attribute_lists_parse_ids_start_with_an_ascii_letter_but_classes_need_not() {
+        let attributes = AttributeLists::parse("{: #über .ünï}")
+            .unwrap()
+            .0
+            .attributes;
         assert_eq!(attributes.id, None);
         assert_eq!(attributes.classes, ["ünï".into()]);
     }
 
     #[test]
-    fn lists_extend_keeps_order_and_lets_the_other_win() {
-        let parse = |text| Lists::parse(text).unwrap().0;
-        let mut lists = parse(r#"{:#a .x k="1" j="2"}"#);
-        lists.extend(parse(r#"{:toc #b .y k="3"}"#));
-        lists.extend(parse("{:.z}"));
-        assert_eq!(lists.attributes.id.as_deref(), Some("b"));
+    fn attribute_lists_extend_keeps_order_and_lets_the_other_win() {
+        let parse = |text| AttributeLists::parse(text).unwrap().0;
+        let mut attribute_lists = parse(r#"{:#a .x k="1" j="2"}"#);
+        attribute_lists.extend(parse(r#"{:toc #b .y k="3"}"#));
+        attribute_lists.extend(parse("{:.z}"));
+        assert_eq!(attribute_lists.attributes.id.as_deref(), Some("b"));
         assert_eq!(
-            lists.attributes.classes,
+            attribute_lists.attributes.classes,
             ["x".into(), "y".into(), "z".into()]
         );
         assert_eq!(
-            lists.attributes.pairs,
+            attribute_lists.attributes.pairs,
             [
                 ("k".into(), CowStr::from("3")),
                 ("j".into(), CowStr::from("2"))
             ]
         );
-        assert!(lists.toc);
+        assert!(attribute_lists.toc);
     }
 
     #[test]
-    fn lists_parse_skips_a_word_running_into_a_wide_character() {
+    fn attribute_lists_parse_skips_a_word_running_into_a_wide_character() {
         // The id ends at `é`, which is neither an id nor a class.
-        let attributes = Lists::parse("{: #aé .b}").unwrap().0.attributes;
+        let attributes = AttributeLists::parse("{: #aé .b}").unwrap().0.attributes;
         assert_eq!(attributes.id, None);
         assert_eq!(attributes.classes, ["b".into()]);
     }

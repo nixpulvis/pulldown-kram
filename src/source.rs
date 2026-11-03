@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use crate::Extensions;
 use crate::abbreviations::Abbreviation;
-use crate::attributes::Lists;
+use crate::attributes::AttributeLists;
 
 /// Maps offsets in rewritten text back to the text it was rewritten from.
 ///
@@ -255,7 +255,7 @@ impl MarkdownElements {
         let Some(element) = self.open.last_mut() else {
             return false;
         };
-        match Tag::starting(trimmed) {
+        match HtmlTag::starting(trimmed) {
             Some(tag) if tag.name == element.name && tag.closing => {
                 if element.depth == 0 {
                     self.open.pop();
@@ -311,19 +311,19 @@ impl Element {
         if !(trimmed.ends_with('>') && trimmed.contains("markdown=\"1\"")) {
             return None;
         }
-        let tag = Tag::starting(trimmed).filter(|tag| !tag.closing)?;
+        let tag = HtmlTag::starting(trimmed).filter(|tag| !tag.closing)?;
         Some(tag.name.to_owned())
     }
 }
 
 /// The tag at the start of a line.
-struct Tag<'a> {
+struct HtmlTag<'a> {
     name: &'a str,
     /// Whether it's a closing tag, like `</div>`.
     closing: bool,
 }
 
-impl<'a> Tag<'a> {
+impl<'a> HtmlTag<'a> {
     /// The tag `trimmed` starts with, if it starts with one.
     fn starting(trimmed: &'a str) -> Option<Self> {
         let rest = trimmed.strip_prefix('<')?;
@@ -447,7 +447,8 @@ impl AttributeLines {
                     || indent == 0 && (trimmed.starts_with(['<', '>']) || Self::item(trimmed));
                 after_blank = false;
             }
-            let only_lists = || Lists::parse(trimmed).is_some_and(|(_, len)| len == trimmed.len());
+            let only_lists =
+                || AttributeLists::parse(trimmed).is_some_and(|(_, len)| len == trimmed.len());
             let block_next = lines.peek().is_some_and(|next| {
                 let indent = Self::indent(next);
                 let next = next.trim();
@@ -870,9 +871,9 @@ pub(crate) struct Marked<'a> {
 }
 
 /// Reading the lines of kramdown's tables.
-struct Table;
+struct TableLine;
 
-impl Table {
+impl TableLine {
     /// Where the `|` in `line` outside code, and math if `math` is read, and
     /// not escaped, are.
     fn pipes(line: &str, math: bool) -> Vec<usize> {
@@ -1020,8 +1021,7 @@ impl<'a> StandIns<'a> {
     pub fn mark(markdown: &'a str, extensions: Extensions) -> Marked<'a> {
         let reads = |extension| extensions.contains(extension);
         let markers = reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS) && markdown.contains('^');
-        let tags = (reads(Extensions::ENABLE_COMMENT_EXTENSION)
-            || reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION))
+        let tags = (reads(Extensions::ENABLE_COMMENTS) || reads(Extensions::ENABLE_NOMARKDOWN))
             && markdown.contains("{:");
         let tables = reads(Extensions::ENABLE_TABLES_WITHOUT_HEADERS)
             && reads(Extensions::ENABLE_TABLES)
@@ -1044,8 +1044,8 @@ impl<'a> StandIns<'a> {
             marks: Vec::new(),
             abbreviations: abbreviations.then(Vec::new),
             end_of_blocks: reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS),
-            comments: reads(Extensions::ENABLE_COMMENT_EXTENSION),
-            nomarkdown: reads(Extensions::ENABLE_NOMARKDOWN_EXTENSION),
+            comments: reads(Extensions::ENABLE_COMMENTS),
+            nomarkdown: reads(Extensions::ENABLE_NOMARKDOWN),
             tables,
             math: reads(Extensions::ENABLE_MATH),
         };
@@ -1067,22 +1067,22 @@ impl<'a> StandIns<'a> {
         self.abbreviations.as_ref()?;
         let only_lists = |line: &'a str| {
             let trimmed = line.trim();
-            Lists::parse(trimmed)
+            AttributeLists::parse(trimmed)
                 .filter(|(_, len)| *len == trimmed.len())
-                .map(|(lists, _)| lists)
+                .map(|(attribute_lists, _)| attribute_lists)
         };
-        let mut lists = Lists::default();
+        let mut attribute_lists = AttributeLists::default();
         let mut end = start;
         while let Some(before) = lines.get(end).copied().and_then(only_lists) {
-            lists.extend(before);
+            attribute_lists.extend(before);
             end += 1;
         }
         let mut abbreviation = Abbreviation::defined(lines.get(end)?)?;
         while let Some(after) = lines.get(end + 1).copied().and_then(only_lists) {
-            lists.extend(after);
+            attribute_lists.extend(after);
             end += 1;
         }
-        abbreviation.lists = lists;
+        abbreviation.attribute_lists = attribute_lists;
         self.abbreviations.as_mut()?.push(abbreviation);
         let line = lines[start];
         let lead = line.len() - line.trim_start().len();
@@ -1128,7 +1128,7 @@ impl<'a> StandIns<'a> {
             }
             let content = line[lead..].trim_end();
             boundary = content.starts_with('#')
-                || Lists::parse(content).is_some_and(|(_, len)| len == content.len());
+                || AttributeLists::parse(content).is_some_and(|(_, len)| len == content.len());
             if starts_block
                 && !line[..lead].contains('>')
                 && let Some(end) = self.abbreviation(&lines, i - 1)
@@ -1177,22 +1177,22 @@ impl<'a> StandIns<'a> {
     /// for CommonMark to read it as kramdown does.
     fn table(&mut self, lines: &[&'a str], start: usize) -> Option<usize> {
         let end = (start..lines.len())
-            .find(|&j| Table::pipes(lines[j], self.math).is_empty())
+            .find(|&j| TableLine::pipes(lines[j], self.math).is_empty())
             .unwrap_or(lines.len());
         if end == start {
             return None;
         }
         let after = lines.get(end).map_or("", |line| line.trim());
-        let lists_after = Lists::parse(after).is_some_and(|(_, len)| len == after.len());
+        let lists_after = AttributeLists::parse(after).is_some_and(|(_, len)| len == after.len());
         let rows = &lines[start..end];
-        let separators = rows.iter().filter(|row| Table::separator(row)).count();
+        let separators = rows.iter().filter(|row| TableLine::separator(row)).count();
         if !(after.is_empty() || lists_after) || separators == rows.len() {
             return None;
         }
         if separators == 0 {
             let columns = rows
                 .iter()
-                .map(|row| Table::cells(row, self.math))
+                .map(|row| TableLine::cells(row, self.math))
                 .max()
                 .unwrap_or(1);
             let mut head = "|".to_owned();
@@ -1206,14 +1206,14 @@ impl<'a> StandIns<'a> {
                 stands_for: StandIn::Nothing,
             });
             self.out.insert(&head);
-        } else if !rows.get(1).is_some_and(|row| Table::separator(row)) {
+        } else if !rows.get(1).is_some_and(|row| TableLine::separator(row)) {
             // A separator further on, which CommonMark has no way to read.
             return None;
         }
         // A header's separator as CommonMark reads one: a cell for each of
         // the header's, between `|`.
         let delimiter = (separators > 0)
-            .then(|| Table::delimiter(rows[1], Table::cells(rows[0], self.math)))
+            .then(|| TableLine::delimiter(rows[1], TableLine::cells(rows[0], self.math)))
             .flatten();
         for (n, row) in rows.iter().enumerate() {
             if n == 1
@@ -1225,7 +1225,7 @@ impl<'a> StandIns<'a> {
                 continue;
             }
             let mut kept = 0;
-            for at in Table::code_pipes(row) {
+            for at in TableLine::code_pipes(row) {
                 self.out.keep(&row[kept..at]);
                 self.out.insert("\\");
                 kept = at;
@@ -1817,7 +1817,7 @@ mod tests {
             ..
         } = StandIns::mark(
             src,
-            Extensions::ENABLE_COMMENT_EXTENSION | Extensions::ENABLE_NOMARKDOWN_EXTENSION,
+            Extensions::ENABLE_COMMENTS | Extensions::ENABLE_NOMARKDOWN,
         );
         assert_eq!(
             text,
@@ -1836,7 +1836,7 @@ mod tests {
         assert_eq!(was(src, &text, &offsets, "<kd:x> `"), "{::comment}e{:/} `");
         assert_ranges_fit(src, &text, &offsets);
         // Only the extensions read: here, the two `nomarkdown`.
-        let marks = StandIns::mark(src, Extensions::ENABLE_NOMARKDOWN_EXTENSION).marks;
+        let marks = StandIns::mark(src, Extensions::ENABLE_NOMARKDOWN).marks;
         assert_eq!(marks.len(), 2);
     }
 

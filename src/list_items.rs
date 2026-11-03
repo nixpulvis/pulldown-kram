@@ -74,8 +74,8 @@ impl<'t> ListItems<'t> {
             match (first.wrapped, bare) {
                 (true, true) => {
                     let paragraph = first.items.start - 1;
-                    let lists = std::mem::take(&mut items[paragraph].lists);
-                    items[paragraph - 1].lists.extend(lists);
+                    let attribute_lists = std::mem::take(&mut items[paragraph].attribute_lists);
+                    items[paragraph - 1].attribute_lists.extend(attribute_lists);
                     items.remove(first.items.end + 1);
                     items.remove(paragraph);
                 }

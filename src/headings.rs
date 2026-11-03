@@ -35,7 +35,13 @@ impl HeaderIds {
                 .then(|| heading.take_explicit_id(text))
                 .flatten();
             // An attribute list's id wins over `{#id}`, coming after it.
-            let id = heading.start.lists.attributes.id.clone().or(explicit);
+            let id = heading
+                .start
+                .attribute_lists
+                .attributes
+                .id
+                .clone()
+                .or(explicit);
             let id = id.or_else(|| {
                 extensions
                     .contains(Extensions::ENABLE_AUTO_IDS)
@@ -240,7 +246,7 @@ mod tests {
     #[test]
     fn header_ids_assign_an_attribute_lists_id_wins() {
         let items = assign("# A {#b}\n", |items| {
-            items[0].lists.attributes.id = Some("c".into());
+            items[0].attribute_lists.attributes.id = Some("c".into());
         });
         assert_eq!(headings(&items), pairs(&[("c", "A")]));
     }

@@ -74,8 +74,8 @@ impl<'t> DefinitionLists<'t> {
             return;
         }
         let end = Item::end_of(items, paragraph);
-        let lists = std::mem::take(&mut items[paragraph].lists);
-        items[definition].lists.extend(lists);
+        let attribute_lists = std::mem::take(&mut items[paragraph].attribute_lists);
+        items[definition].attribute_lists.extend(attribute_lists);
         items.remove(end);
         items.remove(paragraph);
     }
@@ -150,13 +150,21 @@ mod tests {
                 .iter()
                 .position(|item| matches!(item.event, Event::Start(Tag::Paragraph)))
                 .unwrap();
-            items[paragraph].lists.attributes.classes.push("x".into());
+            items[paragraph]
+                .attribute_lists
+                .attributes
+                .classes
+                .push("x".into());
             DefinitionLists::new(text).rewrite(&mut items);
             let definition = items
                 .iter()
                 .find(|item| matches!(item.event, Event::Start(Tag::DefinitionListDefinition)))
                 .unwrap();
-            assert_eq!(definition.lists.attributes.has_class("x"), bare, "{text:?}");
+            assert_eq!(
+                definition.attribute_lists.attributes.has_class("x"),
+                bare,
+                "{text:?}"
+            );
             let paragraphs = items
                 .iter()
                 .filter(|item| matches!(item.event, Event::Start(Tag::Paragraph)))
@@ -167,14 +175,14 @@ mod tests {
 
     #[test]
     fn definition_lists_blank_line_before_allows_spaces_and_quote_markers() {
-        let lists = DefinitionLists::new("a\n>\n  \nb\nc");
+        let attribute_lists = DefinitionLists::new("a\n>\n  \nb\nc");
         // The first line has none before it.
-        assert!(!lists.blank_line_before(0));
-        assert!(!lists.blank_line_before(2));
-        assert!(lists.blank_line_before(4));
-        assert!(lists.blank_line_before(7));
+        assert!(!attribute_lists.blank_line_before(0));
+        assert!(!attribute_lists.blank_line_before(2));
+        assert!(attribute_lists.blank_line_before(4));
+        assert!(attribute_lists.blank_line_before(7));
         // From anywhere on the line.
-        assert!(lists.blank_line_before(8));
-        assert!(!lists.blank_line_before(9));
+        assert!(attribute_lists.blank_line_before(8));
+        assert!(!attribute_lists.blank_line_before(9));
     }
 }

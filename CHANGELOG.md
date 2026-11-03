@@ -50,9 +50,9 @@ The first release.
   blank line comes after it. pulldown-cmark decides for the whole list.
 - `Extensions::ENABLE_MIXED_LIST_MARKERS` reads a list whose items are
   marked with any of `*`, `+` and `-` as one list, as kramdown does.
-- `Extensions::ENABLE_COMMENT_EXTENSION` reads kramdown's `comment`
+- `Extensions::ENABLE_COMMENTS` reads kramdown's `comment`
   extension, giving its text out as an HTML comment, where its text was
-  read as Markdown, and `Extensions::ENABLE_NOMARKDOWN_EXTENSION` its
+  read as Markdown, and `Extensions::ENABLE_NOMARKDOWN` its
   `nomarkdown`, giving its text out as HTML as it is. Their tags left
   unclosed stay text, as in kramdown.
 - `Extensions::ENABLE_BACKSLASH_LINE_BREAKS` reads two backslashes ending
@@ -78,3 +78,6 @@ The first release.
   character kramdown doesn't escape, like `\&`, which CommonMark escapes.
 - A block attribute list on a lazy line after a footnote definition is
   for the footnote, as in kramdown, rather than its last paragraph.
+- A line of only backticks indented as code no longer reads as a fence
+  before pulldown-cmark reads the text, which hid the rest of the
+  document from the rewrites, like abbreviation definitions after it.

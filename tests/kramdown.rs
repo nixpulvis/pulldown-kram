@@ -115,7 +115,7 @@ fn typography() {
 }
 
 #[test]
-fn definition_lists() {
+fn link_definition_lists() {
     let extension = Extension::new(Extensions::ENABLE_DEFINITION_LISTS);
     // A term on each line, and a definition's first paragraph bare unless a blank line comes before it.
     extension.reads(
@@ -500,7 +500,7 @@ fn mixed_list_markers() {
 
 #[test]
 fn comment_extension() {
-    let extension = Extension::new(Extensions::ENABLE_COMMENT_EXTENSION);
+    let extension = Extension::new(Extensions::ENABLE_COMMENTS);
     // A span or a block given out as an HTML comment, and one never closed
     // left as text.
     extension.reads(
@@ -512,7 +512,7 @@ fn comment_extension() {
 
 #[test]
 fn nomarkdown_extension() {
-    let extension = Extension::new(Extensions::ENABLE_NOMARKDOWN_EXTENSION);
+    let extension = Extension::new(Extensions::ENABLE_NOMARKDOWN);
     // Given out as HTML as it is, unless its type is another converter's.
     extension.reads(
         "a {::nomarkdown}*b*{:/} c\n\n{::nomarkdown}\n<i>d</i>\n{:/}\n\n{::nomarkdown type=\"latex\"}\ne\n{:/}\n",

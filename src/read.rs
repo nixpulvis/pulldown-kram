@@ -10,10 +10,10 @@ use pulldown_cmark::{
 };
 
 use crate::abbreviations::{Abbreviation, Abbreviations};
-use crate::attributes::Lists;
-use crate::definitions::DefinitionLists;
+use crate::attributes::AttributeLists;
+use crate::definition_lists::DefinitionLists;
 use crate::headings::HeaderIds;
-use crate::lists::ListItems;
+use crate::list_items::ListItems;
 use crate::source::{Mark, MarkdownElements, StandIn};
 use crate::{Extensions, Options};
 
@@ -23,7 +23,7 @@ use crate::{Extensions, Options};
 pub(crate) struct Item<'a> {
     pub event: Event<'a>,
     pub range: Range<usize>,
-    pub lists: Lists<'a>,
+    pub attribute_lists: AttributeLists<'a>,
 }
 
 impl<'a> Item<'a> {
@@ -31,7 +31,7 @@ impl<'a> Item<'a> {
         Self {
             event,
             range,
-            lists: Lists::default(),
+            attribute_lists: AttributeLists::default(),
         }
     }
 
@@ -43,13 +43,18 @@ impl<'a> Item<'a> {
         if matches!(kind, CodeBlockKind::Fenced(info) if !info.trim().is_empty()) {
             return;
         }
-        let language = self.lists.attributes.classes.iter().find_map(|class| {
-            let language = class.strip_prefix("language-")?;
-            Some(match class {
-                CowStr::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
-                _ => CowStr::from(language.to_owned()),
-            })
-        });
+        let language = self
+            .attribute_lists
+            .attributes
+            .classes
+            .iter()
+            .find_map(|class| {
+                let language = class.strip_prefix("language-")?;
+                Some(match class {
+                    CowStr::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
+                    _ => CowStr::from(language.to_owned()),
+                })
+            });
         if let Some(language) = language {
             *kind = CodeBlockKind::Fenced(language);
         }
@@ -125,7 +130,7 @@ impl<'a> Item<'a> {
                     tasks |= Self::starts_with_task(&items[i + 1..]);
                     if tasks {
                         items[i]
-                            .lists
+                            .attribute_lists
                             .attributes
                             .classes
                             .insert(0, "task-list-item".into());
@@ -139,7 +144,7 @@ impl<'a> Item<'a> {
             }
             if tasks {
                 items[list]
-                    .lists
+                    .attribute_lists
                     .attributes
                     .classes
                     .insert(0, "task-list".into());
@@ -176,13 +181,13 @@ pub(crate) struct Reader<'a> {
     block: Option<Index>,
     previous_block: Option<Index>,
     /// What lists alone between blocks give the next block.
-    next: Option<Lists<'a>>,
+    next: Option<AttributeLists<'a>>,
     split: Option<Split>,
     /// For each strikethrough open, whether it's kramdown's, `~~a~~`,
     /// rather than `~a~`, which kramdown leaves as text.
     strikethroughs: Vec<bool>,
     ids: HeaderIds,
-    definitions: Definitions<'a>,
+    link_definitions: LinkDefinitions<'a>,
     /// The stand-ins in the text, and the index of the next not yet read.
     marks: &'a [Mark<'a>],
     next_mark: usize,
@@ -232,9 +237,9 @@ struct Slot<'a> {
 /// use them: on the lines right after one, or before it, right before or
 /// alone between blocks.
 #[derive(Default)]
-struct Definitions<'a> {
+struct LinkDefinitions<'a> {
     /// The lists for each definition with any, by its label in lowercase.
-    lists: Vec<(String, Lists<'a>)>,
+    attribute_lists: Vec<(String, AttributeLists<'a>)>,
     /// Where each line of lists for a definition starts, in order.
     lines: Vec<usize>,
 }
@@ -277,14 +282,14 @@ impl<'a> Reader<'a> {
     pub fn new(text: &'a str, options: Options, marks: &'a [Mark<'a>]) -> Self {
         let markdown = options.parser_options();
         let events = Parser::new_ext(text, markdown).into_offset_iter();
-        let definitions = if options
+        let link_definitions = if options
             .kramdown
             .contains(Extensions::ENABLE_BLOCK_ATTRIBUTES)
             && text.contains("{:")
         {
-            Definitions::read(text, events.reference_definitions())
+            LinkDefinitions::read(text, events.reference_definitions())
         } else {
-            Definitions::default()
+            LinkDefinitions::default()
         };
         Self {
             text,
@@ -298,7 +303,7 @@ impl<'a> Reader<'a> {
             split: None,
             strikethroughs: Vec::new(),
             ids: HeaderIds::default(),
-            definitions,
+            link_definitions,
             marks,
             next_mark: 0,
             abbreviations: Abbreviations::new(&[]),
@@ -366,13 +371,13 @@ impl<'a> Reader<'a> {
                     self.settle(block);
                 }
                 let next = self.next.take();
-                let definition = self.definition_lists(&event);
+                let definition = self.link_definition_lists(&event);
                 let i = self.push(event, range);
-                if let Some(lists) = definition {
-                    self.pending.attach(i, lists);
+                if let Some(attribute_lists) = definition {
+                    self.pending.attach(i, attribute_lists);
                 }
-                if let Some(lists) = next {
-                    self.pending.attach(i, lists);
+                if let Some(attribute_lists) = next {
+                    self.pending.attach(i, attribute_lists);
                 }
                 if top {
                     self.previous_block = self.block;
@@ -392,8 +397,10 @@ impl<'a> Reader<'a> {
                 self.push(event, range);
             }
             Event::Text(_) if self.kramdown.attribute_lists() && !self.pending.in_code_block() => {
-                match Lists::parse(&self.text[range.start..]) {
-                    Some((lists, len)) => self.lists(lists, len, event, range),
+                match AttributeLists::parse(&self.text[range.start..]) {
+                    Some((attribute_lists, len)) => {
+                        self.attribute_lists(attribute_lists, len, event, range)
+                    }
                     None => {
                         self.push(event, range);
                     }
@@ -533,8 +540,8 @@ impl<'a> Reader<'a> {
 
     /// The lists for the link definition `event` uses, if it's the start of
     /// a link or image by reference to one with any.
-    fn definition_lists(&self, event: &Event<'a>) -> Option<Lists<'a>> {
-        if self.definitions.lists.is_empty() {
+    fn link_definition_lists(&self, event: &Event<'a>) -> Option<AttributeLists<'a>> {
+        if self.link_definitions.attribute_lists.is_empty() {
             return None;
         }
         let Event::Start(Tag::Link { link_type, id, .. } | Tag::Image { link_type, id, .. }) =
@@ -549,11 +556,11 @@ impl<'a> Reader<'a> {
             return None;
         }
         let label = id.to_lowercase();
-        self.definitions
-            .lists
+        self.link_definitions
+            .attribute_lists
             .iter()
             .find(|(other, _)| *other == label)
-            .map(|(_, lists)| lists.clone())
+            .map(|(_, attribute_lists)| attribute_lists.clone())
     }
 
     /// Whether the element starting at `start` goes on with the one just
@@ -668,12 +675,12 @@ impl<'a> Reader<'a> {
             .last()
             .is_some_and(|last| matches!(last.event, Event::Start(Tag::Paragraph)))
             && (matches!(self.events.peek(), Some((Event::End(TagEnd::Paragraph), _)))
-                || self.lists_end_line(end))
+                || self.attribute_lists_end_line(end))
     }
 
     /// Whether nothing follows `end` on its line, and the next line is
     /// attribute lists alone, for the block it ends.
-    fn lists_end_line(&self, end: usize) -> bool {
+    fn attribute_lists_end_line(&self, end: usize) -> bool {
         if !self.kramdown.contains(Extensions::ENABLE_BLOCK_ATTRIBUTES) {
             return false;
         }
@@ -685,12 +692,18 @@ impl<'a> Reader<'a> {
             .trim_start_matches(|c: char| c.is_whitespace() || c == '>')
             .trim_end();
         rest.trim().is_empty()
-            && Lists::parse(next).is_some_and(|(_, len)| len > 0 && len == next.len())
+            && AttributeLists::parse(next).is_some_and(|(_, len)| len > 0 && len == next.len())
     }
 
     /// Gives `lists`, `len` bytes at the start of `event`'s text, to what
     /// they're for, or leaves them as text if they're for nothing.
-    fn lists(&mut self, lists: Lists<'a>, len: usize, event: Event<'a>, range: Range<usize>) {
+    fn attribute_lists(
+        &mut self,
+        attribute_lists: AttributeLists<'a>,
+        len: usize,
+        event: Event<'a>,
+        range: Range<usize>,
+    ) {
         let start = range.start;
         let end = start + len;
         let Some(target) = self.target(start, end) else {
@@ -700,7 +713,7 @@ impl<'a> Reader<'a> {
         let rest = self.consume(range, end);
         match target {
             Target::Span(i) => {
-                self.pending.attach(i, lists);
+                self.pending.attach(i, attribute_lists);
                 if let Some(rest) = rest {
                     self.push(
                         Event::Text(CowStr::Borrowed(&self.text[rest.clone()])),
@@ -709,7 +722,7 @@ impl<'a> Reader<'a> {
                 }
             }
             Target::Item(i) => {
-                self.pending.attach(i, lists);
+                self.pending.attach(i, attribute_lists);
                 if let Some(rest) = rest {
                     let text = self.text[rest.clone()].trim_start();
                     if !text.is_empty() {
@@ -718,7 +731,7 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            Target::Line { lazy } => self.line(lists, lazy, start),
+            Target::Line { lazy } => self.line(attribute_lists, lazy, start),
         }
     }
 
@@ -797,8 +810,8 @@ impl<'a> Reader<'a> {
     /// term's line they come before, or for a lazy line, the outermost
     /// list, quote, definition list or footnote definition they're in.
     /// Those for a link definition are already its links'.
-    fn line(&mut self, lists: Lists<'a>, lazy: bool, start: usize) {
-        if self.definitions.lines.binary_search(&start).is_ok() {
+    fn line(&mut self, attribute_lists: AttributeLists<'a>, lazy: bool, start: usize) {
+        if self.link_definitions.lines.binary_search(&start).is_ok() {
             if matches!(self.pending.last(), Some(item) if matches!(item.event, Event::Start(Tag::Paragraph)))
             {
                 self.skip_soft_break();
@@ -807,7 +820,7 @@ impl<'a> Reader<'a> {
         }
         if let Some(split) = self.split {
             // Lists on the lines after a paragraph's lists are for it too.
-            self.pending.attach(split.paragraph, lists);
+            self.pending.attach(split.paragraph, attribute_lists);
             self.skip_soft_break();
             return;
         }
@@ -815,9 +828,9 @@ impl<'a> Reader<'a> {
             return;
         };
         match self.pending.item(last).event {
-            Event::Start(Tag::TableCell) => self.table_row(last, lists),
+            Event::Start(Tag::TableCell) => self.table_row(last, attribute_lists),
             Event::Start(Tag::Paragraph) => {
-                self.pending.attach(last, lists);
+                self.pending.attach(last, attribute_lists);
                 self.skip_soft_break();
             }
             Event::Start(Tag::DefinitionListTitle)
@@ -827,7 +840,7 @@ impl<'a> Reader<'a> {
                 // The term starts on the next line.
                 let term = line.end;
                 self.events.next();
-                self.pending.attach(list, lists);
+                self.pending.attach(list, attribute_lists);
                 self.pending.item_mut(last).range.start = term;
             }
             Event::SoftBreak => {
@@ -850,13 +863,13 @@ impl<'a> Reader<'a> {
                         _ => false,
                     });
                 if let Some(container) = container.filter(|_| lazy) {
-                    self.pending.attach(container, lists);
+                    self.pending.attach(container, attribute_lists);
                     return;
                 }
                 let Some(block) = self.pending.innermost() else {
                     return;
                 };
-                self.pending.attach(block, lists);
+                self.pending.attach(block, attribute_lists);
                 let paragraph =
                     matches!(self.pending.item(block).event, Event::Start(Tag::Paragraph));
                 if paragraph && self.skip_soft_break() {
@@ -868,7 +881,7 @@ impl<'a> Reader<'a> {
             }
             _ => {
                 if let Some(block) = self.pending.innermost() {
-                    self.pending.attach(block, lists);
+                    self.pending.attach(block, attribute_lists);
                 }
             }
         }
@@ -878,7 +891,7 @@ impl<'a> Reader<'a> {
     /// On the line right after a table, they're for the table, but
     /// pulldown-cmark reads the line as one more row, so the row is left
     /// out. Anywhere else, they're for the cell.
-    fn table_row(&mut self, cell: Index, lists: Lists<'a>) {
+    fn table_row(&mut self, cell: Index, attribute_lists: AttributeLists<'a>) {
         let mut rest = Vec::new();
         for (event, range) in self.events.by_ref() {
             let end = matches!(event, Event::End(TagEnd::TableRow));
@@ -904,11 +917,11 @@ impl<'a> Reader<'a> {
         {
             self.pending.truncate(row);
             if let Some(table) = self.pending.innermost() {
-                self.pending.attach(table, lists);
+                self.pending.attach(table, attribute_lists);
             }
             return;
         }
-        self.pending.attach(cell, lists);
+        self.pending.attach(cell, attribute_lists);
         for (event, range) in rest {
             self.event(event, range);
         }
@@ -917,7 +930,11 @@ impl<'a> Reader<'a> {
     /// Gives what's in a paragraph of only lists to the block before it, if
     /// no blank line comes between them, or else the block after it.
     fn alone(&mut self, paragraph: Item<'a>) {
-        let Item { lists, range, .. } = paragraph;
+        let Item {
+            attribute_lists,
+            range,
+            ..
+        } = paragraph;
         if let Some(last) = self.pending.last_index() {
             let block = match self.pending.item(last).event {
                 Event::End(_) => Some(self.pending.start_of(last)),
@@ -927,11 +944,11 @@ impl<'a> Reader<'a> {
             if let Some(block) = block
                 && self.next_to(&self.pending.item(last).range, range.start)
             {
-                self.pending.attach(block, lists);
+                self.pending.attach(block, attribute_lists);
                 return;
             }
         }
-        self.next = Some(lists);
+        self.next = Some(attribute_lists);
     }
 
     /// Skips the events read from the lists ending at `end`, which start at
@@ -1104,8 +1121,8 @@ impl<'a> Pending<'a> {
         i.0.checked_sub(self.base.0).expect("an item not given out")
     }
 
-    fn attach(&mut self, i: Index, lists: Lists<'a>) {
-        self.item_mut(i).lists.extend(lists);
+    fn attach(&mut self, i: Index, attribute_lists: AttributeLists<'a>) {
+        self.item_mut(i).attribute_lists.extend(attribute_lists);
     }
 
     fn is_empty(&self) -> bool {
@@ -1171,7 +1188,7 @@ impl<'a> Pending<'a> {
     }
 }
 
-impl<'a> Definitions<'a> {
+impl<'a> LinkDefinitions<'a> {
     /// The lists for the link `definitions` read from `text`.
     fn read(text: &'a str, definitions: &RefDefs<'_>) -> Self {
         let mut spans: Vec<_> = definitions
@@ -1184,20 +1201,22 @@ impl<'a> Definitions<'a> {
         let mut taken = 0;
         for (label, span) in spans {
             let lines = found.lines.len();
-            let mut lists = Lists::default();
+            let mut attribute_lists = AttributeLists::default();
             for (start, before) in Self::before(text, span.start, taken) {
                 found.lines.push(start);
-                lists.extend(before);
+                attribute_lists.extend(before);
             }
             let mut line = Self::line_end(text, span.end.saturating_sub(1));
-            while let Some((start, after, end)) = Self::lists_on(text, line) {
+            while let Some((start, after, end)) = Self::attribute_lists_on(text, line) {
                 found.lines.push(start);
-                lists.extend(after);
+                attribute_lists.extend(after);
                 line = end;
             }
             taken = taken.max(line);
             if found.lines.len() > lines {
-                found.lists.push((label.to_lowercase(), lists));
+                found
+                    .attribute_lists
+                    .push((label.to_lowercase(), attribute_lists));
             }
         }
         found
@@ -1206,8 +1225,8 @@ impl<'a> Definitions<'a> {
     /// The lists before the definition at `start`, on the lines right
     /// before it, or alone between blocks before it, from the first, each
     /// with where it starts. Lines before `taken` are another's.
-    fn before(text: &'a str, start: usize, taken: usize) -> Vec<(usize, Lists<'a>)> {
-        let mut lists = Vec::new();
+    fn before(text: &'a str, start: usize, taken: usize) -> Vec<(usize, AttributeLists<'a>)> {
+        let mut attribute_lists = Vec::new();
         let mut above = Self::line_before(text, Self::line_start(text, start));
         while let Some(line) = above
             && text[line..Self::line_end(text, line)].trim().is_empty()
@@ -1216,28 +1235,31 @@ impl<'a> Definitions<'a> {
         }
         while let Some(line) = above
             && line >= taken
-            && let Some((start, found, _)) = Self::lists_on(text, line)
+            && let Some((start, found, _)) = Self::attribute_lists_on(text, line)
         {
-            lists.push((start, found));
+            attribute_lists.push((start, found));
             above = Self::line_before(text, line);
         }
         // Right after another block, they're for it.
         if above.is_some_and(|line| !text[line..Self::line_end(text, line)].trim().is_empty()) {
             return Vec::new();
         }
-        lists.reverse();
-        lists
+        attribute_lists.reverse();
+        attribute_lists
     }
 
     /// The lists alone on the line starting at `line`, if any, with where
     /// they start and where the next line starts.
-    fn lists_on(text: &'a str, line: usize) -> Option<(usize, Lists<'a>, usize)> {
+    fn attribute_lists_on(
+        text: &'a str,
+        line: usize,
+    ) -> Option<(usize, AttributeLists<'a>, usize)> {
         let end = Self::line_end(text, line);
         let content = text.get(line..end)?;
         let trimmed = content.trim();
         let indent = content.len() - content.trim_start().len();
-        let (lists, len) = Lists::parse(trimmed).filter(|_| indent < 4)?;
-        (len == trimmed.len()).then_some((line + indent, lists, end))
+        let (attribute_lists, len) = AttributeLists::parse(trimmed).filter(|_| indent < 4)?;
+        (len == trimmed.len()).then_some((line + indent, attribute_lists, end))
     }
 
     fn line_start(text: &str, at: usize) -> usize {
@@ -1267,7 +1289,7 @@ mod tests {
     fn classed(items: &[Item<'_>]) -> Vec<(&'static str, String)> {
         items
             .iter()
-            .filter(|item| !item.lists.attributes.classes.is_empty())
+            .filter(|item| !item.attribute_lists.attributes.classes.is_empty())
             .map(|item| {
                 let tag = match &item.event {
                     Event::Start(Tag::Paragraph) => "p",
@@ -1279,7 +1301,7 @@ mod tests {
                     Event::Start(Tag::Image { .. }) => "img",
                     event => panic!("unexpected {event:?}"),
                 };
-                (tag, item.lists.attributes.classes.join(" "))
+                (tag, item.attribute_lists.attributes.classes.join(" "))
             })
             .collect()
     }
@@ -1296,7 +1318,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_span_lists_go_to_the_span_they_follow() {
+    fn reader_span_attribute_lists_go_to_the_span_they_follow() {
         let items = read("~~a~~{:.s} **b**{:.t} [c](d){:.u} ![e](f){:.v}\n");
         assert_eq!(
             classed(&items),
@@ -1311,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_text_after_span_lists_stays() {
+    fn reader_text_after_span_attribute_lists_stays() {
         let items = read("*a*{:.x}b c\n");
         assert_eq!(classed(&items), [("em", "x".into())]);
         assert_eq!(text(&items), "ab c");
@@ -1325,7 +1347,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_item_lists_in_a_loose_list() {
+    fn reader_item_attribute_lists_in_a_loose_list() {
         let items = read("* {:.x}   a\n\n* b\n");
         assert_eq!(classed(&items), [("li", "x".into())]);
         assert_eq!(text(&items), "ab");
@@ -1392,7 +1414,7 @@ mod tests {
     fn item_take_language_from_classes_when_the_fence_has_none() {
         let language = |kind| {
             let mut item = Item::new(Event::Start(Tag::CodeBlock(kind)), 0..0);
-            item.lists.attributes.classes =
+            item.attribute_lists.attributes.classes =
                 vec!["x".into(), "language-rb".into(), "language-py".into()];
             item.take_language_from_classes();
             item.event

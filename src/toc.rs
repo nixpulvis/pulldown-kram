@@ -46,15 +46,16 @@ impl<'a> Toc<'a> {
     /// Replaces the lists marked `{:toc}` as long as the tables fit in
     /// `budget` items, in one pass.
     fn replace_lists_within(items: Vec<Item<'a>>, mut budget: usize) -> Vec<Item<'a>> {
-        let is_mark =
-            |item: &Item<'a>| item.lists.toc && matches!(item.event, Event::Start(Tag::List(_)));
+        let is_mark = |item: &Item<'a>| {
+            item.attribute_lists.toc && matches!(item.event, Event::Start(Tag::List(_)))
+        };
         if !items.iter().any(is_mark) {
             return items;
         }
         let toc = Self::new(&items);
         let size = toc.size();
         // The lists made into tables, as their first and last items.
-        let mut lists = Vec::new();
+        let mut attribute_lists = Vec::new();
         let mut i = 0;
         while i < items.len() {
             if is_mark(&items[i]) {
@@ -64,13 +65,13 @@ impl<'a> Toc<'a> {
                 }
                 budget -= size;
                 let end = Item::end_of(&items, i);
-                lists.push((i, end));
+                attribute_lists.push((i, end));
                 i = end;
             }
             i += 1;
         }
-        let mut out = Vec::with_capacity(items.len() + lists.len() * size);
-        let mut lists = lists.into_iter().peekable();
+        let mut out = Vec::with_capacity(items.len() + attribute_lists.len() * size);
+        let mut attribute_lists = attribute_lists.into_iter().peekable();
         let mut skip_to = None;
         for (i, item) in items.into_iter().enumerate() {
             if let Some(end) = skip_to {
@@ -79,10 +80,10 @@ impl<'a> Toc<'a> {
                 }
                 continue;
             }
-            if let Some(&(start, end)) = lists.peek()
+            if let Some(&(start, end)) = attribute_lists.peek()
                 && start == i
             {
-                lists.next();
+                attribute_lists.next();
                 toc.write_list(&item, &mut out);
                 if end != i {
                     skip_to = Some(end);
@@ -142,7 +143,7 @@ impl<'a> Toc<'a> {
             return;
         }
         out.push(Item {
-            lists: list.lists.clone(),
+            attribute_lists: list.attribute_lists.clone(),
             ..Item::new(Event::Start(Tag::List(start)), list.range.clone())
         });
         self.write_entries(&self.roots, start, &list.range, out);
@@ -196,7 +197,7 @@ impl<'a> Entry<'a> {
             else {
                 continue;
             };
-            if item.lists.attributes.has_class("no_toc") {
+            if item.attribute_lists.attributes.has_class("no_toc") {
                 continue;
             }
             let content = items[i + 1..Item::end_of(items, i)]
@@ -269,7 +270,7 @@ mod tests {
     fn toc_replace_lists_keeps_the_lists_numbering_and_attributes() {
         let items = toc("3. x\n{:toc .t}\n\n# A\n", Extensions::all());
         assert_eq!(outline(&items), "<ol start=3><li><a #a>A</a></li></ol>");
-        assert!(items[0].lists.attributes.has_class("t"));
+        assert!(items[0].attribute_lists.attributes.has_class("t"));
     }
 
     #[test]

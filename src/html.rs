@@ -35,7 +35,7 @@ use pulldown_cmark::{
 use crate::Attributes;
 
 /// An event, with its attributes.
-type Item<'a> = (Event<'a>, Attributes<'a>);
+type Attributed<'a> = (Event<'a>, Attributes<'a>);
 
 /// Writes the events of `iter` as HTML onto the end of `s`.
 pub fn push_html<'a, I>(s: &mut String, iter: I)
@@ -54,7 +54,7 @@ where
     let mut html = HtmlWriter {
         out: writer,
         footnotes: Footnotes::default(),
-        table: Table::default(),
+        table: CurrentTable::default(),
     };
     html.write(Lookahead::new(iter))?;
     html.write_footnotes()
@@ -98,10 +98,10 @@ impl<W: io::Write> fmt::Write for IoWriter<W> {
 /// Events, with the next few in view.
 struct Lookahead<'a, I> {
     iter: I,
-    ahead: VecDeque<Item<'a>>,
+    ahead: VecDeque<Attributed<'a>>,
 }
 
-impl<'a, I: Iterator<Item = Item<'a>>> Lookahead<'a, I> {
+impl<'a, I: Iterator<Item = Attributed<'a>>> Lookahead<'a, I> {
     fn new(iter: I) -> Self {
         Self {
             iter,
@@ -109,7 +109,7 @@ impl<'a, I: Iterator<Item = Item<'a>>> Lookahead<'a, I> {
         }
     }
 
-    fn next(&mut self) -> Option<Item<'a>> {
+    fn next(&mut self) -> Option<Attributed<'a>> {
         self.ahead.pop_front().or_else(|| self.iter.next())
     }
 
@@ -123,7 +123,7 @@ impl<'a, I: Iterator<Item = Item<'a>>> Lookahead<'a, I> {
 
     /// The rest of the element whose start was just taken, up to its end,
     /// which is taken but left out.
-    fn element(&mut self) -> Vec<Item<'a>> {
+    fn element(&mut self) -> Vec<Attributed<'a>> {
         let mut content = Vec::new();
         let mut depth = 1usize;
         while let Some(item) = self.next() {
@@ -169,7 +169,7 @@ struct Footnotes<'a> {
     indices: HashMap<String, usize>,
     /// What each footnote defined but not yet written holds, by its label
     /// in lowercase.
-    definitions: HashMap<String, Vec<Item<'a>>>,
+    definitions: HashMap<String, Vec<Attributed<'a>>>,
     /// How many of those referred to have been looked at for writing.
     looked_at: usize,
 }
@@ -181,7 +181,7 @@ struct Footnote<'a> {
     /// Its label, as first referred to.
     label: CowStr<'a>,
     /// What it holds.
-    content: Vec<Item<'a>>,
+    content: Vec<Attributed<'a>>,
 }
 
 /// A footnote referred to.
@@ -205,7 +205,7 @@ struct Reference<'a> {
 impl<'a> Footnotes<'a> {
     /// Keeps what the footnote `label` holds, unless it's been defined
     /// already, as the first definition wins.
-    fn define(&mut self, label: &str, content: Vec<Item<'a>>) {
+    fn define(&mut self, label: &str, content: Vec<Attributed<'a>>) {
         self.definitions
             .entry(label.to_lowercase())
             .or_insert(content);
@@ -256,7 +256,7 @@ impl<'a> Footnotes<'a> {
 
 /// The table being written.
 #[derive(Default)]
-struct Table {
+struct CurrentTable {
     /// The alignment of its columns.
     alignments: Vec<Alignment>,
     /// The column of the next cell in the row.
@@ -265,7 +265,7 @@ struct Table {
     in_body: bool,
 }
 
-impl Table {
+impl CurrentTable {
     /// Starts a row, returning whether it starts the body.
     fn start_row(&mut self) -> bool {
         self.column = 0;
@@ -300,12 +300,15 @@ impl Table {
 struct HtmlWriter<'a, W> {
     out: W,
     footnotes: Footnotes<'a>,
-    table: Table,
+    table: CurrentTable,
 }
 
 impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
     /// Writes `events`, keeping footnote definitions for the end.
-    fn write<I: Iterator<Item = Item<'a>>>(&mut self, mut events: Lookahead<'a, I>) -> fmt::Result {
+    fn write<I: Iterator<Item = Attributed<'a>>>(
+        &mut self,
+        mut events: Lookahead<'a, I>,
+    ) -> fmt::Result {
         while let Some((event, attributes)) = events.next() {
             match event {
                 Event::Start(Tag::FootnoteDefinition(label)) => {
@@ -413,9 +416,9 @@ impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
                 ..
             } => return self.link(link_type, &dest_url, &title, attributes),
             Tag::Table(alignments) => {
-                self.table = Table {
+                self.table = CurrentTable {
                     alignments,
-                    ..Table::default()
+                    ..CurrentTable::default()
                 };
                 "table"
             }
@@ -530,7 +533,7 @@ impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
         dest_url: &str,
         title: &str,
         attributes: &Attributes,
-        content: Vec<Item<'a>>,
+        content: Vec<Attributed<'a>>,
     ) -> fmt::Result {
         let mut alt = String::new();
         for (event, _) in content {
@@ -571,7 +574,7 @@ impl<'a, W: fmt::Write> HtmlWriter<'a, W> {
         &mut self,
         kind: &CodeBlockKind,
         mut attributes: Attributes<'a>,
-        content: Vec<Item<'a>>,
+        content: Vec<Attributed<'a>>,
     ) -> fmt::Result {
         let mut code = String::new();
         for (event, _) in content {

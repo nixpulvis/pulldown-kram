@@ -199,10 +199,10 @@
 
 mod abbreviations;
 mod attributes;
-mod definitions;
+mod definition_lists;
 mod headings;
 pub mod html;
-mod lists;
+mod list_items;
 mod options;
 mod read;
 mod source;
@@ -366,7 +366,8 @@ impl<'a> Iterator for Events<'a> {
     type Item = (Event<'a>, Attributes<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.item().map(|item| (item.event, item.lists.attributes))
+        self.item()
+            .map(|item| (item.event, item.attribute_lists.attributes))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -424,7 +425,7 @@ impl<'a> Iterator for OffsetIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.0.item()?;
         let range = self.0.offsets.original(item.range);
-        Some((item.event, item.lists.attributes, range))
+        Some((item.event, item.attribute_lists.attributes, range))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

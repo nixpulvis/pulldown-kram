@@ -4,7 +4,7 @@
 
 use pulldown_cmark::{CowStr, Event, Tag, TagEnd};
 
-use crate::attributes::{Attributes, Lists};
+use crate::attributes::{AttributeLists, Attributes};
 use crate::read::Item;
 
 /// An abbreviation defined in a document.
@@ -15,7 +15,7 @@ pub(crate) struct Abbreviation<'a> {
     /// What it stands for, empty for no title.
     pub title: &'a str,
     /// What attribute lists on the lines around its definition give it.
-    pub lists: Lists<'a>,
+    pub attribute_lists: AttributeLists<'a>,
 }
 
 impl<'a> Abbreviation<'a> {
@@ -28,14 +28,14 @@ impl<'a> Abbreviation<'a> {
         (indent < 4 && close > 0).then(|| Abbreviation {
             abbreviation: &inside[..close],
             title: inside[close + "]:".len()..].trim(),
-            lists: Lists::default(),
+            attribute_lists: AttributeLists::default(),
         })
     }
 
     /// The opening tag of an `<abbr>` for this abbreviation.
     fn tag(&self) -> String {
         let mut attributes = Attributes::default();
-        attributes.extend(self.lists.attributes.clone());
+        attributes.extend(self.attribute_lists.attributes.clone());
         let mut tag = String::from("<abbr");
         if let Some(id) = &attributes.id {
             Self::attribute(&mut tag, "id", id);
