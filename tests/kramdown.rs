@@ -1,10 +1,12 @@
-//! Documents read as kramdown 2.5.2 reads them with GFM input, Jekyll's
-//! default. Each case reads a document twice: with one extension, and the
-//! few it builds on, to show what that extension does, and with every
-//! extension but it, to show what's left without it. Each is written out
-//! with `pulldown_kram::html`, as kramdown writes HTML. With the extension,
-//! it's kramdown's HTML for the same input, less what the extensions left
-//! off would add, like header ids.
+//! One test per extension, each checking that documents read the way
+//! kramdown 2.5.2 reads them with GFM input, as Jekyll runs it.
+//!
+//! Each case reads a document twice and writes it out with
+//! `pulldown_kram::html`. First it reads with only the extension, and any it
+//! builds on, to show what the extension does. The HTML expected there is
+//! kramdown's for the same input, less what the other extensions would add,
+//! like header ids. Then it reads with every extension but this one, to show
+//! what's left without it.
 
 use pulldown_kram::pulldown_cmark::{CodeBlockKind, Event, Tag};
 use pulldown_kram::{Document, Extensions, Options, html};
@@ -499,9 +501,9 @@ fn mixed_list_markers() {
 }
 
 #[test]
-fn comment_extension() {
+fn comments() {
     let extension = Extension::new(Extensions::ENABLE_COMMENTS);
-    // A span or a block given out as an HTML comment, and one never closed
+    // A span or a block written as an HTML comment, and one never closed
     // left as text.
     extension.reads(
         "a {::comment}b{:/} c\n\n{::comment}\nd\n{:/comment}\n\n{::comment}\ne\n",
@@ -511,7 +513,7 @@ fn comment_extension() {
 }
 
 #[test]
-fn nomarkdown_extension() {
+fn nomarkdown() {
     let extension = Extension::new(Extensions::ENABLE_NOMARKDOWN);
     // Given out as HTML as it is, unless its type is another converter's.
     extension.reads(

@@ -38,8 +38,8 @@ impl Offsets {
         self.to_original(range.start, false)..self.to_original(range.end, true)
     }
 
-    /// These offsets, for their rewritten text since rewritten again with
-    /// `later`'s edits.
+    /// These offsets followed by `later`'s, for when the rewritten text is
+    /// rewritten again.
     pub fn then(self, later: Offsets) -> Offsets {
         if self.edits.is_empty() {
             return later;
@@ -166,7 +166,7 @@ impl Offsets {
     }
 }
 
-/// Text being rewritten from the start, with its edits.
+/// A rewrite in progress: the text written so far, and its edits.
 #[derive(Default)]
 pub(super) struct Rewrite {
     pub(super) out: String,
@@ -185,18 +185,18 @@ impl Rewrite {
         }
     }
 
-    /// Keeps `text`, the original's next.
+    /// Copies `text`, the next part of the original, unchanged.
     pub(super) fn keep(&mut self, text: &str) {
         self.out.push_str(text);
         self.read += text.len();
     }
 
-    /// Puts `text` in, in place of none of the original.
+    /// Inserts `text` without replacing any of the original.
     pub(super) fn insert(&mut self, text: &str) {
         self.replace(0, text);
     }
 
-    /// Puts `text` in place of the original's next `len` bytes.
+    /// Writes `text` in place of the next `len` bytes of the original.
     pub(super) fn replace(&mut self, len: usize, text: &str) {
         let start = self.out.len();
         self.out.push_str(text);
@@ -207,8 +207,8 @@ impl Rewrite {
         self.read += len;
     }
 
-    /// The rewritten text, just `original` if nothing changed, and its
-    /// offsets.
+    /// The rewritten text and its offsets, or `original` itself, borrowed,
+    /// if nothing changed.
     pub(super) fn finish(self, original: &str) -> (Cow<'_, str>, Offsets) {
         debug_assert_eq!(self.read, original.len());
         if self.offsets.is_empty() {

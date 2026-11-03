@@ -1,6 +1,18 @@
-//! Rewrites the few things pulldown-cmark's CommonMark parser reads
-//! differently from kramdown, before it reads them, keeping track of where
-//! the rewritten text was in the original.
+//! The rewrites made to the Markdown before pulldown-cmark reads it,
+//! wherever kramdown reads a line differently from CommonMark, and the
+//! offsets that map the rewritten text back to the original.
+//!
+//! - [`StandIns`] replaces syntax pulldown-cmark can't read at all with
+//!   stand-ins, which the reader swaps back, and puts a header row in each
+//!   table that has none.
+//! - [`MarkdownElements`] separates the content of `markdown="1"` elements
+//!   from their tags.
+//! - [`HtmlBlocks`] ends HTML blocks at their end tags.
+//! - [`SpanTags`] joins a line of only a span tag onto the next line.
+//! - [`AttributeLines`] separates a line of attribute lists from code or a
+//!   link definition right after it.
+//! - [`DefinitionLines`] fixes the blank lines and indentation of
+//!   definitions.
 
 mod attribute_lines;
 mod definition_lines;
@@ -24,8 +36,8 @@ pub(crate) use stand_ins::{Mark, Marked, StandIn, StandIns};
 use crate::Extensions;
 use crate::text::Lead;
 
-/// A rewrite of some Markdown, and the offsets of its edits. It borrows
-/// the Markdown back when there's nothing to change.
+/// A rewrite of some Markdown, giving the new text and the offsets of its
+/// edits, or the Markdown itself, borrowed, when there's nothing to change.
 type Rewriter = for<'s> fn(&'s str) -> (Cow<'s, str>, Offsets);
 
 /// The rewrites made after the stand-ins go in, in the order they're made,
@@ -45,7 +57,7 @@ pub(crate) const REWRITES: [(Extensions, Rewriter); 5] = [
     ),
 ];
 
-/// The tag at the start of a line.
+/// The HTML tag at the start of some text.
 struct HtmlTag<'a> {
     name: &'a str,
     /// Whether it's a closing tag, like `</div>`.

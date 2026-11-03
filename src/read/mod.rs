@@ -1,5 +1,7 @@
-//! Reads pulldown-cmark's events, taking kramdown's attribute lists out of
-//! the text and giving them to the elements they're for.
+//! Reads pulldown-cmark's events the way kramdown means them. Attribute
+//! lists are taken out of the text and attached to the elements they belong
+//! to, stand-ins are swapped for what they stand for, and the structure is
+//! corrected where kramdown's differs.
 
 mod item;
 mod link_definitions;
@@ -23,9 +25,9 @@ pub(crate) use item::Item;
 use link_definitions::LinkDefinitions;
 use pending::{Index, Pending};
 
-/// Reads the events of a document as pulldown-cmark gives them, a block at
-/// a time: a block is given out once the next one starts, as only then is
-/// it known that no attribute list after it is for it.
+/// Reads the events of a document as pulldown-cmark parses them, a block at
+/// a time. A block is only emitted once the next one starts, since until
+/// then an attribute list after it could still belong to it.
 pub(crate) struct Reader<'a> {
     text: &'a str,
     kramdown: Extensions,
@@ -33,11 +35,11 @@ pub(crate) struct Reader<'a> {
     /// Where each line after the first starts.
     lines: Vec<usize>,
     pending: Pending<'a>,
-    /// The indices of the last top-level block read, and the one before it,
-    /// which an attribute list may still be for.
+    /// The indices of the last top-level block read and the one before it,
+    /// which an attribute list may still belong to.
     block: Option<Index>,
     previous_block: Option<Index>,
-    /// What lists alone between blocks give the next block.
+    /// The attribute lists found alone between blocks, for the next block.
     next: Option<AttributeLists<'a>>,
     split: Option<Split>,
     /// For each strikethrough open, whether it's kramdown's, `~~a~~`,
@@ -45,37 +47,38 @@ pub(crate) struct Reader<'a> {
     strikethroughs: Vec<bool>,
     ids: HeaderIds,
     link_definitions: LinkDefinitions<'a>,
-    /// The stand-ins in the text, and the index of the next not yet read.
+    /// The stand-ins in the text, and the index of the next one not yet
+    /// reached.
     marks: &'a [Mark<'a>],
     next_mark: usize,
     abbreviations: Abbreviations<'a, 'a>,
-    /// The items ready to give out.
+    /// The items ready to emit.
     ready: VecDeque<Item<'a>>,
 }
 
-/// A paragraph that lists on lines of their own have ended, for the lines
-/// after them to start a new one.
+/// A paragraph that a line of attribute lists has ended, so the lines after
+/// that line start a new paragraph.
 #[derive(Clone, Copy)]
 struct Split {
     /// The index of the paragraph's start.
     paragraph: Index,
-    /// Where in the source the paragraph ends, at the lists.
+    /// Where the paragraph ends in the text, at the attribute lists.
     end: usize,
 }
 
-/// What an attribute list is for, by where it is.
+/// The element an attribute list belongs to, found by where it is.
 enum Target {
     /// Right after a span, like `*a*{:.x}`: the span at this index.
     Span(Index),
     /// At the start of a list item, like `* {:.x} a`: the item at this index.
     Item(Index),
-    /// Alone on its line, `lazy` if it isn't indented or quoted like the
-    /// lines before it.
+    /// Alone on its line. `lazy` when the line isn't indented or quoted
+    /// like the lines before it.
     Line { lazy: bool },
 }
 
 impl Target {
-    /// The extension that reads lists here.
+    /// The extension that reads attribute lists in this place.
     fn extension(&self) -> Extensions {
         match self {
             Target::Span(_) => Extensions::ENABLE_SPAN_ATTRIBUTES,
@@ -86,8 +89,8 @@ impl Target {
 }
 
 impl<'a> Reader<'a> {
-    /// Reads `text` with `options`, giving out what each of `marks` stands
-    /// for in place of the stand-in.
+    /// Reads `text` with `options`, swapping each of the stand-ins in `marks`
+    /// for what it stands for.
     pub fn new(text: &'a str, options: Options, marks: &'a [Mark<'a>]) -> Self {
         let markdown = options.parser_options();
         let events = Parser::new_ext(text, markdown).into_offset_iter();
@@ -253,9 +256,9 @@ impl<'a> Reader<'a> {
             .find(|name| name.eq_ignore_ascii_case(&inside[..len]))
     }
 
-    /// Gives out the text of the raw HTML span `name`, from `start` to its
-    /// closing tag, as it is, in place of what pulldown-cmark read of it,
-    /// as far as what it read ends before the closing tag.
+    /// Emits the text of the raw HTML span `name`, from `start` up to its
+    /// closing tag, as raw HTML. It replaces the events pulldown-cmark read
+    /// from that text, as long as they end before the closing tag.
     fn raw_span(&mut self, name: &str, start: usize) {
         let rest = &self.text[start..];
         let Some(close) = rest.match_indices("</").find_map(|(at, _)| {
@@ -268,8 +271,7 @@ impl<'a> Reader<'a> {
         }) else {
             return;
         };
-        // As far as what pulldown-cmark read is text, ending before the
-        // closing tag.
+        // Skip the inline events pulldown-cmark read before the closing tag.
         let mut end = start;
         while let Some((event, next)) = self.events.peek()
             && Item::inline(event)
@@ -291,8 +293,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Takes the backslash off the end of the text just read, if two in the
-    /// source end it, kramdown's hard line break, returning whether it did.
+    /// Takes the backslash off the end of the text just read, if the source
+    /// line ends in two, which is kramdown's hard line break. Returns
+    /// whether it did.
     fn take_backslash(&mut self) -> bool {
         let Some(last) = self.pending.last_index() else {
             return false;
@@ -312,8 +315,9 @@ impl<'a> Reader<'a> {
         true
     }
 
-    /// What the stand-in at the start of `range` stands for, if a block's
-    /// starts it, or a span's, `block` says, marking it read.
+    /// What the stand-in at the start of `range` stands for, if there's one
+    /// there of the kind `block` asks for, a block's or a span's. Marks it
+    /// as reached.
     fn take_mark(&mut self, range: &Range<usize>, block: bool) -> Option<StandIn<'a>> {
         let marks = self.marks;
         while marks
@@ -344,22 +348,25 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Whether the element starting at `start` goes on with the one just
-    /// ended with `end`, with only blank lines between, as kramdown reads
-    /// it. A definition list goes on past any blank lines, while
-    /// pulldown-cmark's ends after a blank line following an empty
+    /// Whether kramdown reads the element starting at `start` as more of the
+    /// one that just ended with `end`, with only blank lines between them.
+    ///
+    /// A definition list goes on past any blank lines, where
+    /// pulldown-cmark's ends after a blank line that follows an empty
     /// definition. And a list goes on whichever of `*`, `+` and `-` marks
-    /// its items, while pulldown-cmark's ends at each change.
+    /// its items, where pulldown-cmark's ends when the marker changes.
     fn continues(&self, end: TagEnd, start: usize) -> bool {
         self.pending.last().is_some_and(|last| {
             last.event == Event::End(end) && text::is_blank(&self.text[last.range.end..start])
         })
     }
 
-    /// `event` as kramdown reads its source, where pulldown-cmark reads more
-    /// into it: a single `~` and a single `$` are text, `$$` math in a
-    /// paragraph with more in it is inline, math is without the whitespace
-    /// around it, and HTML is without the `markdown="1"` kramdown reads.
+    /// `event` corrected to what kramdown reads from the same source, where
+    /// pulldown-cmark reads more into it.
+    ///
+    /// A single `~` and a single `$` are text. `$$` math in a paragraph
+    /// with more in it is inline. Math loses the whitespace around it, and
+    /// HTML loses the `markdown="1"` that kramdown reads.
     fn as_kramdown(&mut self, event: Event<'a>, range: Range<usize>) -> (Event<'a>, Range<usize>) {
         let text = |range: Range<usize>| {
             (
@@ -445,9 +452,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Whether the event about to be read, ending at `end`, is all there is
-    /// in its paragraph, as it is when attribute lists on the next line end
-    /// the paragraph after it.
+    /// Whether the event about to be read, which ends at `end`, is all there
+    /// is in its paragraph. That includes when a line of attribute lists
+    /// right after it ends the paragraph.
     fn alone_in_paragraph(&mut self, end: usize) -> bool {
         self.pending
             .last()
@@ -456,8 +463,8 @@ impl<'a> Reader<'a> {
                 || self.attribute_lists_end_line(end))
     }
 
-    /// Whether nothing follows `end` on its line, and the next line is
-    /// attribute lists alone, for the block it ends.
+    /// Whether nothing follows `end` on its line, and the next line is only
+    /// attribute lists, which belong to the block ending there.
     fn attribute_lists_end_line(&self, end: usize) -> bool {
         if !self.kramdown.contains(Extensions::ENABLE_BLOCK_ATTRIBUTES) {
             return false;
@@ -472,8 +479,9 @@ impl<'a> Reader<'a> {
         rest.trim().is_empty() && AttributeLists::whole(next).is_some()
     }
 
-    /// Gives `lists`, `len` bytes at the start of `event`'s text, to what
-    /// they're for, or leaves them as text if they're for nothing.
+    /// Attaches `attribute_lists`, the first `len` bytes of `event`'s text,
+    /// to the element they belong to. If they belong to nothing, they stay
+    /// in the text.
     fn attribute_lists(
         &mut self,
         attribute_lists: AttributeLists<'a>,
@@ -512,7 +520,8 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// What the lists between `start` and `end` are for, if anything.
+    /// The element the attribute lists between `start` and `end` belong to,
+    /// if any.
     fn target(&self, start: usize, end: usize) -> Option<Target> {
         let last = self.pending.last_index()?;
         let target = self
@@ -522,8 +531,8 @@ impl<'a> Reader<'a> {
         self.kramdown.contains(target.extension()).then_some(target)
     }
 
-    /// The span the lists at `start` come right after, if `last` ends one
-    /// there.
+    /// The span that the attribute lists at `start` come right after, if
+    /// `last` ends one there.
     fn span_before(&self, last: Index, start: usize) -> Option<Target> {
         let item = self.pending.item(last);
         if item.range.end != start {
@@ -544,9 +553,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// A line of its own, if nothing but indentation or quote markers comes
-    /// before the lists between `start` and `end` on their line, and nothing
-    /// after.
+    /// A line of their own, if the attribute lists between `start` and `end`
+    /// have only indentation or quote markers before them on their line,
+    /// and nothing after.
     fn alone_on_line(&self, start: usize, end: usize) -> Option<Target> {
         let lines = Lines(self.text);
         let lead = &self.text[lines.start(start)..start];
@@ -556,7 +565,8 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// The list item `last` starts, or starts the paragraph of.
+    /// The list item at `last`, or the one whose first paragraph starts at
+    /// `last`.
     fn item_starting(&self, last: Index) -> Option<Target> {
         let item = match self.pending.item(last).event {
             Event::Start(Tag::Item) => last,
@@ -569,7 +579,7 @@ impl<'a> Reader<'a> {
             .then_some(Target::Item(item))
     }
 
-    /// The definition list `title` starts the first term of, if any.
+    /// The definition list whose first term starts at `title`, if any.
     fn starts_definition_list(&self, title: Index) -> Option<Index> {
         let list = title.previous()?;
         self.pending
@@ -578,12 +588,18 @@ impl<'a> Reader<'a> {
             .then_some(list)
     }
 
-    /// Gives `lists` alone on their line, starting at `start`, to what
-    /// they're for: the paragraph they start, the paragraph they end,
-    /// splitting off the lines after them, the definition list whose first
-    /// term's line they come before, or for a lazy line, the outermost
-    /// list, quote, definition list or footnote definition they're in.
-    /// Those for a link definition are already its links'.
+    /// Attaches `attribute_lists`, alone on the line at `start`, to the
+    /// element they belong to. That's one of these:
+    ///
+    /// - the paragraph they start,
+    /// - the paragraph they end, with the lines after them split off into a
+    ///   new one,
+    /// - the definition list whose first term comes on the next line,
+    /// - for a lazy line, the outermost list, quote, definition list or
+    ///   footnote definition they're in.
+    ///
+    /// Lists on the lines of a link definition already belong to its links,
+    /// so they're skipped.
     fn line(&mut self, attribute_lists: AttributeLists<'a>, lazy: bool, start: usize) {
         if self.link_definitions.on_line(start) {
             if matches!(self.pending.last(), Some(item) if matches!(item.event, Event::Start(Tag::Paragraph)))
@@ -593,7 +609,7 @@ impl<'a> Reader<'a> {
             return;
         }
         if let Some(split) = self.split {
-            // Lists on the lines after a paragraph's lists are for it too.
+            // More lines of lists after a paragraph's belong to it too.
             self.pending.attach(split.paragraph, attribute_lists);
             self.skip_soft_break();
             return;
@@ -619,7 +635,7 @@ impl<'a> Reader<'a> {
             }
             Event::SoftBreak => {
                 self.pending.pop();
-                // Between terms, they're for the term before, not the list.
+                // Between terms, they belong to the term before, not the list.
                 let in_term = self.pending.innermost().is_some_and(|i| {
                     matches!(
                         self.pending.item(i).event,
@@ -661,10 +677,10 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Gives `lists`, alone in the table cell `cell`, to what they're for.
-    /// On the line right after a table, they're for the table, but
-    /// pulldown-cmark reads the line as one more row, so the row is left
-    /// out. Anywhere else, they're for the cell.
+    /// Attaches `attribute_lists`, alone in the table cell `cell`, to the
+    /// element they belong to. On the line right after a table they belong
+    /// to the table, but pulldown-cmark reads that line as one more row, so
+    /// the row is dropped. Anywhere else they belong to the cell.
     fn table_row(&mut self, cell: Index, attribute_lists: AttributeLists<'a>) {
         let mut rest = Vec::new();
         for (event, range) in self.events.by_ref() {
@@ -701,8 +717,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Gives what's in a paragraph of only lists to the block before it, if
-    /// no blank line comes between them, or else the block after it.
+    /// Attaches the attribute lists of a paragraph made of nothing else to
+    /// the block before it, if no blank line comes between them, or else to
+    /// the block after it.
     fn alone(&mut self, paragraph: Item<'a>) {
         let Item {
             attribute_lists,
@@ -725,8 +742,9 @@ impl<'a> Reader<'a> {
         self.next = Some(attribute_lists);
     }
 
-    /// Skips the events read from the lists ending at `end`, which start at
-    /// `range`, returning the range of any text left after them.
+    /// Skips the events pulldown-cmark read from the attribute lists that
+    /// start at `range` and end at `end`. Returns the range of any text left
+    /// after them in the last event.
     fn consume(&mut self, mut range: Range<usize>, end: usize) -> Option<Range<usize>> {
         loop {
             if range.end > end {
@@ -742,7 +760,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Skips a soft break next, returning whether there was one.
+    /// Skips a soft break if it's next, returning whether there was one.
     fn skip_soft_break(&mut self) -> bool {
         let soft_break = matches!(self.events.peek(), Some((Event::SoftBreak, _)));
         if soft_break {
@@ -751,8 +769,8 @@ impl<'a> Reader<'a> {
         soft_break
     }
 
-    /// Pushes `event`, starting a new paragraph first if lists ended the
-    /// one it's in.
+    /// Pushes `event`, first starting a new paragraph if a line of attribute
+    /// lists ended the one it's in.
     fn push(&mut self, event: Event<'a>, range: Range<usize>) -> Index {
         if let Some(split) = self.split.take()
             && !matches!(event, Event::End(TagEnd::Paragraph))
@@ -765,8 +783,9 @@ impl<'a> Reader<'a> {
         self.pending.push(event, range)
     }
 
-    /// Gives out the items before `end`, with their ids, classes and
-    /// languages.
+    /// Makes the items before `end` ready to emit, after the passes that
+    /// work on whole blocks: header ids, definition lists, list item
+    /// paragraphs, abbreviations, task list classes and code languages.
     fn settle(&mut self, end: Index) {
         let mut items = self.pending.take_before(end);
         self.ids.assign(&mut items, self.text, self.kramdown);

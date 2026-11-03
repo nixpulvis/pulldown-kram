@@ -5,9 +5,9 @@ use pulldown_cmark::{Event, Tag};
 use super::Item;
 use crate::attributes::AttributeLists;
 
-/// The items read but not yet given out, and the elements open among them.
-/// Indices count every item read, starting from the first, so an index
-/// holds as the items before it are given out.
+/// The items read but not emitted yet, and the elements open among them.
+/// Indices count every item read, from the first, so an index stays valid
+/// as the items before it are emitted.
 #[derive(Default)]
 pub(super) struct Pending<'a> {
     slots: Vec<Slot<'a>>,
@@ -18,8 +18,8 @@ pub(super) struct Pending<'a> {
 }
 
 /// Where an item is in `Pending`, counting every item read from the first,
-/// so it holds as the items before it are given out. A position in a slice
-/// of items is a plain `usize`.
+/// so it stays valid as the items before it are emitted. A position in a
+/// plain slice of items is a `usize` instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Index(usize);
 
@@ -35,7 +35,7 @@ impl Index {
     }
 }
 
-/// An item read, but not given out until no more lists can be for it.
+/// An item read, and held until no more attribute lists can belong to it.
 pub(super) struct Slot<'a> {
     item: Item<'a>,
     /// For an end, the index of its start.
@@ -64,8 +64,8 @@ impl<'a> Pending<'a> {
         i
     }
 
-    /// Takes off the last item, which mustn't be an end, closing it if it's
-    /// open.
+    /// Removes the last item, which mustn't be an end. If it started an
+    /// element, that element is no longer open.
     pub(super) fn pop(&mut self) -> Option<Item<'a>> {
         let slot = self.slots.pop()?;
         debug_assert!(slot.start.is_none(), "an end popped");
@@ -75,8 +75,8 @@ impl<'a> Pending<'a> {
         Some(slot.item)
     }
 
-    /// Takes off the last item, an end, opening again the element it
-    /// closed, and returns the index of the element's start.
+    /// Removes the last item, an end, so the element it closed is open
+    /// again. Returns the index of the element's start.
     pub(super) fn reopen(&mut self) -> Index {
         let slot = self.slots.pop().expect("an end");
         let start = slot.start.expect("an end");
@@ -84,13 +84,14 @@ impl<'a> Pending<'a> {
         start
     }
 
-    /// Drops the item at `i` and every one after it, closing those open.
+    /// Drops the item at `i` and every one after it, along with any elements
+    /// they left open.
     pub(super) fn truncate(&mut self, i: Index) {
         self.slots.truncate(self.offset(i));
         self.open.retain(|&open| open < i);
     }
 
-    /// Takes out the items before `end`, for giving out.
+    /// Removes the items before `end`, to emit them.
     pub(super) fn take_before(&mut self, end: Index) -> Vec<Item<'a>> {
         if end <= self.base {
             return Vec::new();
@@ -104,9 +105,10 @@ impl<'a> Pending<'a> {
         items
     }
 
-    /// Where the item at `i` is in `slots`. `i` mustn't be given out.
+    /// Where the item at `i` is in `slots`. It mustn't be emitted yet.
     pub(super) fn offset(&self, i: Index) -> usize {
-        i.0.checked_sub(self.base.0).expect("an item not given out")
+        i.0.checked_sub(self.base.0)
+            .expect("an item not yet emitted")
     }
 
     pub(super) fn attach(&mut self, i: Index, attribute_lists: AttributeLists<'a>) {
@@ -147,7 +149,7 @@ impl<'a> Pending<'a> {
         &mut self.slots[offset].item
     }
 
-    /// The index of the start of the end at `i`.
+    /// The index of the start that matches the end at `i`.
     pub(super) fn start_of(&self, i: Index) -> Index {
         self.slots[self.offset(i)].start.expect("an end")
     }
@@ -192,7 +194,7 @@ mod tests {
         assert_eq!(pending.item(text).event, Event::Text("a".into()));
         assert_eq!(pending.start_of(end), start);
         assert_eq!(pending.last_index(), Some(end));
-        // What's already given out can't be given again.
+        // What's already emitted can't be taken again.
         assert!(pending.take_before(start).is_empty());
         assert_eq!(pending.push(Event::Rule, 2..3), Index(3));
     }
@@ -211,7 +213,7 @@ mod tests {
         assert!(pending.is_empty_paragraph());
         pending.pop();
         assert_eq!(pending.innermost(), Some(table));
-        // Popping what isn't open leaves the open elements be.
+        // Popping an item that opened nothing leaves the open elements alone.
         pending.push(Event::SoftBreak, 0..1);
         pending.pop();
         assert_eq!(pending.innermost(), Some(table));

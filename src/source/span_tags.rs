@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use super::{Fence, HtmlTag, Offsets, Rewrite};
 
 /// kramdown reads a line of only a span-level tag, like `<img>` or `<span>`,
-/// as the start of a paragraph, Markdown on the lines after it included.
+/// as the start of a paragraph that goes on with the lines after it.
 /// CommonMark starts an HTML block there instead, which runs to the next
 /// blank line and leaves any Markdown in it as text. Joining the next line
-/// onto the tag's makes the same paragraph of it.
+/// onto the tag's line makes CommonMark read the same paragraph.
 pub(crate) struct SpanTags;
 
 impl SpanTags {

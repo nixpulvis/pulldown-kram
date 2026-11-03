@@ -2,11 +2,11 @@ use std::borrow::Cow;
 
 use super::{Fence, HtmlTag, Offsets, Rewrite};
 
-/// kramdown ends an HTML block with the end tag of the element starting
-/// it, or the end of a comment, reading any text after it as Markdown.
-/// CommonMark runs most HTML blocks to the next blank line, so this puts
-/// one after the end, and a line break before any text after it on its
-/// line.
+/// kramdown ends an HTML block at the end tag of the element that starts
+/// it, or at the end of a comment, and reads any text after that as
+/// Markdown. CommonMark runs most HTML blocks to the next blank line. So
+/// this puts a blank line after the end, with a line break first if more
+/// text follows on the same line.
 pub(crate) struct HtmlBlocks;
 
 impl HtmlBlocks {
@@ -102,7 +102,8 @@ impl HtmlBlocks {
                 continue;
             }
             let Some((last, end)) = Self::end(content, &lines[i..]) else {
-                // Not one, or never ended: CommonMark's to read.
+                // Not a block kramdown ends early, or one that never ends:
+                // left for CommonMark.
                 html = true;
                 out.keep(line);
                 continue;
@@ -138,10 +139,10 @@ impl HtmlBlocks {
         out.finish(markdown)
     }
 
-    /// Where the HTML block `content` starts ends, if it starts one kramdown
-    /// ends: the index of the line it ends on, `0` for this one and `1` for
-    /// the first of `after`, and the end's offset in that line, or in
-    /// `content` for this one.
+    /// Where the HTML block that starts with `content` ends, if kramdown
+    /// ends it early. That's the index of the line it ends on, where `0` is
+    /// `content`'s line and `1` the first of `after`, and the offset of the
+    /// end in that line, or in `content` for its own line.
     fn end(content: &str, after: &[&str]) -> Option<(usize, usize)> {
         if content.starts_with("<!--") {
             return std::iter::once(content)

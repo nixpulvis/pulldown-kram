@@ -1,28 +1,8 @@
 //! kramdown's own test cases, and pulldown-kram's additions to them, read
-//! with pulldown-kram and checked against kramdown's HTML for them, as
-//! pulldown-cmark checks itself against the CommonMark spec.
-//!
-//! kramdown's cases are in testcases/ here, copied from kramdown 2.5.2, and
-//! the additions, for what those don't cover, in additions/. Their HTML is
-//! what kramdown makes of them with GFM input, as Jekyll runs it, with
-//! kramdown's default in place of each option pulldown-kram doesn't
-//! support; generate.rb makes it, and says how. It also writes cases.txt,
-//! which says for each case which extensions its options leave off. Each
-//! case is read with every other extension, and its events are written out
-//! with `pulldown_kram::html`, which writes them the way kramdown writes the
-//! same elements. Both sides are then normalised, to erase how the HTML is
-//! formatted but not what it says, and compared.
-//!
-//! Each case is a test of its own, named by its path under testcases/, or
-//! for an addition by `additions/` and its path under additions/, so
-//! `cargo test --test kramdown_suite block/04_header` runs only those.
-//!
-//! Cases known to fail are listed in known-failures.txt, a case on each line
-//! with an optional `# reason`. A listed case's test, marked
-//! `[known failure]`, passes while the case fails, and fails once it passes.
-//! A listed case that isn't one fails a test of its own. With
-//! `UPDATE_KRAMDOWN_SUITE=1`, it rewrites the list to the cases failing now
-//! instead, keeping the reasons of those already listed.
+//! with pulldown-kram and checked against the HTML kramdown makes of them.
+//! Each case is a test of its own, named by its path. README.md here says
+//! where the cases come from, how to regenerate them, and how the list of
+//! known failures works.
 
 mod diff;
 mod normalise;
@@ -46,6 +26,10 @@ const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/kramdown_suite")
 
 /// The environment variable that rewrites the list of known failures.
 const UPDATE: &str = "UPDATE_KRAMDOWN_SUITE";
+
+/// The environment variable naming cases to check as if they weren't known
+/// failures, split by commas, to see how they differ.
+const SHOW: &str = "KRAMDOWN_SUITE_SHOW";
 
 /// The normaliser every case shares.
 static NORMALISER: LazyLock<Normaliser> = LazyLock::new(Normaliser::load);
@@ -73,10 +57,13 @@ fn main() {
         println!("rewrote known-failures.txt with {} cases", failed.len());
         return;
     }
+    let shown: Vec<String> = std::env::var(SHOW)
+        .map(|cases| cases.split(',').map(str::to_owned).collect())
+        .unwrap_or_default();
     let mut trials = normalise::tests::trials();
     trials.extend(known.missing(&cases));
     trials.extend(cases.into_iter().map(|case| {
-        let listed = known.contains(&case.name);
+        let listed = known.contains(&case.name) && !shown.contains(&case.name);
         case.trial(listed)
     }));
     libtest_mimic::run(&args, trials).exit();

@@ -1,11 +1,8 @@
-//! kramdown's tables of contents, lists marked `{:toc}` made into links to
-//! the document's headings.
+//! kramdown's tables of contents: lists marked `{:toc}`, replaced with
+//! links to the document's headings. The tables share a budget of items,
+//! as [`Extensions::ENABLE_TABLES_OF_CONTENTS`] explains.
 //!
-//! Every table lists every heading, so a document of many tables and many
-//! headings would grow with the square of its size. The tables share a
-//! budget of items, the larger of the document's items and 100,000, as
-//! pulldown-cmark limits link reference expansion. Once a table doesn't fit
-//! in what's left, its list and every later marked list stay as written.
+//! [`Extensions::ENABLE_TABLES_OF_CONTENTS`]: crate::Extensions::ENABLE_TABLES_OF_CONTENTS
 
 use std::ops::Range;
 
@@ -13,8 +10,8 @@ use pulldown_cmark::{CowStr, Event, LinkType, Tag, TagEnd};
 
 use crate::read::Item;
 
-/// A document's headings, as a tree for its tables of contents: each one
-/// under the last before it of a higher level.
+/// A document's headings as a tree, for its tables of contents. Each
+/// heading sits under the nearest heading before it with a higher level.
 pub(crate) struct Toc<'a> {
     entries: Vec<Entry<'a>>,
     /// The entries under each entry.
@@ -35,9 +32,8 @@ struct Entry<'a> {
 impl<'a> Toc<'a> {
     /// Replaces each list in `items` marked `{:toc}` with a list of links to
     /// the headings, nested by level, leaving out those with the class
-    /// `no_toc`. The tables give out at most the larger of `items.len()`
-    /// and 100,000 items; from the first that doesn't fit, lists stay as
-    /// written.
+    /// `no_toc`. The tables hold at most 100,000 items between them, or
+    /// `items.len()` if that's more.
     pub fn replace_lists(items: Vec<Item<'a>>) -> Vec<Item<'a>> {
         let budget = items.len().max(100_000);
         Self::replace_lists_within(items, budget)

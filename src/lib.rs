@@ -13,7 +13,7 @@
 //!     &events[0].0,
 //!     Event::Start(Tag::Heading { id: Some(id), .. }) if id.as_ref() == "intro"
 //! ));
-//! // Attribute lists go to what they're for, not the text.
+//! // Attribute lists are attached to the element they follow, not left in the text.
 //! let (_, attributes) = events
 //!     .iter()
 //!     .find(|(event, _)| matches!(event, Event::Code(c) if c.as_ref() == "x"))
@@ -21,14 +21,12 @@
 //! assert!(attributes.has_class("new"));
 //! ```
 //!
-//! Underneath, pulldown-cmark reads the document as CommonMark, after a
-//! little rewriting where kramdown reads a line differently, and the events
-//! it gives are worked over for kramdown's additions. So a program that
-//! renders pulldown-cmark's events renders these too, and can pick up the
-//! attributes where it wants them.
+//! pulldown-cmark does the parsing, so a program that already renders its
+//! events renders these too, and can use the attributes where it wants.
+//! [How it works](#how-it-works) says what's done around it.
 //!
-//! For HTML, [`html::push_html`] writes the events out the way kramdown
-//! writes the same elements, attributes included.
+//! For HTML, [`html::push_html`] writes the events the way kramdown writes
+//! the same elements, attributes included.
 //!
 //! For CommonMark text rather than events, write the events back out with
 //! [pulldown-cmark-to-cmark]. The attributes are lost, as CommonMark has no
@@ -40,24 +38,24 @@
 //!
 //! # Syntax
 //!
-//! How much of [kramdown's syntax] is understood, following its sections. A
-//! checked item reads as kramdown means it. An unchecked one doesn't, and
-//! says what happens instead. Much of what's checked is CommonMark, where
-//! the two agree, and what's beyond CommonMark depends on the [`Options`]
-//! given. Each of kramdown's extensions can be left off with
-//! [`Extensions`], and `Extensions::all()` reads them all.
+//! How much of [kramdown's syntax] is supported, following the sections of
+//! its documentation. A checked item reads as it does in kramdown. An
+//! unchecked one doesn't, and says what happens instead. Much of the
+//! checked list is plain CommonMark, where the two agree. The rest depends
+//! on the [`Extensions`] turned on, and `Extensions::all()` turns on all of
+//! them.
 //!
 //! [kramdown's syntax]: https://kramdown.gettalong.org/syntax.html
 //!
 //! ## Source text
 //!
-//! - [x] Backslash escapes, for every character kramdown escapes, and only
-//!   those, the backslash before any other kept.
+//! - [x] Backslash escapes for the characters kramdown escapes, and only
+//!   those. A backslash before any other character is kept.
 //! - [x] Tab stops at multiples of four.
 //! - [ ] Headers starting only on a block boundary. CommonMark lets an atx
 //!   or setext header interrupt a paragraph, so `para\n# Not` has a heading.
-//! - [x] The end-of-block marker, `^`, ending the paragraph, list, quote or
-//!   code block before it.
+//! - [x] The end-of-block marker, `^`, which ends the paragraph, list,
+//!   quote or code block before it.
 //!
 //! ## Structural elements
 //!
@@ -108,25 +106,25 @@
 //! ## HTML
 //!
 //! HTML comes through as pulldown-cmark's HTML events, for the program
-//! reading them to make what it will of.
+//! reading them to handle.
 //!
-//! - [x] HTML blocks, Markdown in them left as HTML, ending with the end
-//!   tag of the element starting them, with Markdown after it, when no
-//!   blank line comes before that.
+//! - [x] HTML blocks, with any Markdown inside left as HTML. A block ends at
+//!   the end tag of the element that starts it, and text after that tag is
+//!   Markdown, as long as no blank line comes first.
 //! - [ ] A blank line in an HTML block. It ends the block, as in
 //!   CommonMark, and what follows is read as Markdown.
-//! - [x] `markdown="1"` on a block element, its content read as Markdown
-//!   and the attribute left out.
+//! - [x] `markdown="1"` on a block element. Its content is read as
+//!   Markdown, and the attribute is left out.
 //! - [ ] `markdown="block"`, `markdown="span"` and `markdown="0"`. Their
 //!   content is left as HTML.
 //! - [ ] The `parse_block_html` option.
-//! - [x] A line of only a span tag, like `<img>`, starting a paragraph
-//!   with the text on the line after it.
+//! - [x] A line of only a span tag, like `<img>`, starting a paragraph that
+//!   takes in the text on the next line.
 //! - [ ] A line of only a span tag with a blank line after it, a paragraph
 //!   of its own. It's an HTML block.
 //! - [x] HTML spans, with Markdown in them.
-//! - [x] The HTML spans kramdown leaves raw, like `<kbd>` and `<code>`,
-//!   their text given out as it is.
+//! - [x] The HTML spans kramdown leaves raw, like `<kbd>` and `<code>`, with
+//!   their text kept as it is.
 //!
 //! ## Text markup
 //!
@@ -152,8 +150,9 @@
 //!   strong emphasis.
 //! - [x] Code spans.
 //! - [x] Footnotes, with blocks in their definitions.
-//! - [x] Abbreviations, `*[HTML]: …`, each use given out as an `<abbr>`, in
-//!   HTML events, with attribute lists on the lines around the definition.
+//! - [x] Abbreviations, `*[HTML]: …`. Each use becomes an `<abbr>` in an
+//!   HTML event, with the attributes from lists on the lines around the
+//!   definition.
 //! - [x] Dashes, ellipses and smart quotes.
 //! - [ ] Guillemets from `<<` and `>>`. Read as text, or as an HTML tag.
 //! - [x] Inline math, `$$…$$` in a paragraph with more in it, while `$…$`
@@ -176,10 +175,10 @@
 //! - [x] The empty span attribute list, `{::}`, separating spans.
 //! - [ ] Attribute list definitions, `{:name: .class}`. Dropped, never
 //!   applied.
-//! - [x] The `comment` extension, a block or a span, given out as an HTML
-//!   comment.
-//! - [x] The `nomarkdown` extension, a block or a span, given out as HTML
-//!   as it is, unless its `type` is another converter's.
+//! - [x] The `comment` extension, as a block or a span, which comes out as
+//!   an HTML comment.
+//! - [x] The `nomarkdown` extension, as a block or a span, which comes out
+//!   as raw HTML, unless its `type` names another converter.
 //! - [ ] The `options` extension. Dropped.
 //! - [x] Tags of extensions kramdown doesn't have, like `{::something}`,
 //!   kept as text.
@@ -190,9 +189,33 @@
 //!
 //! - [x] Header ids, made the way kramdown's GFM parser, Jekyll's default,
 //!   makes them, from the heading's text without its markup.
-//! - [x] `{:toc}` tables of contents, nested by level, leaving out headings
-//!   with the class `no_toc`, and links inside headings. With no headings
-//!   to list, the marked list is dropped.
+//! - [x] `{:toc}` tables of contents, nested by level. Headings with the
+//!   class `no_toc` are left out, and so are links inside headings. With
+//!   no headings to list, the marked list is dropped.
+//!
+//! # How it works
+//!
+//! Reading a document takes four steps.
+//!
+//! 1. The Markdown is rewritten wherever kramdown reads a line differently
+//!    from CommonMark, so that pulldown-cmark reads it kramdown's way. For
+//!    example, a blank line goes in after the end tag of an HTML block,
+//!    since kramdown ends the block there and CommonMark doesn't. Syntax
+//!    pulldown-cmark can't read at all, like `{::comment}` or the
+//!    end-of-block marker, is replaced with a stand-in: a little HTML that
+//!    pulldown-cmark reads as a block or a span, and that the reader later
+//!    swaps for what it stands for.
+//! 2. pulldown-cmark parses the rewritten text.
+//! 3. A reader takes the events a block at a time. It takes attribute
+//!    lists out of the text and attaches them to the elements they belong
+//!    to, puts back what the stand-ins stand for, and corrects the events
+//!    where kramdown's structure differs, like in definition lists, list
+//!    item paragraphs, header ids and abbreviations.
+//! 4. With tables of contents on, all of the events are read first, and
+//!    each list marked `{:toc}` is replaced with links to the headings.
+//!
+//! The ranges from [`Events::into_offset_iter`] are mapped back through the
+//! rewrites, so they point into the Markdown as it was given.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations)]
@@ -227,7 +250,7 @@ pub struct Document<'a> {
     text: Cow<'a, str>,
     /// Where the rewritten text was in the markdown.
     offsets: Offsets,
-    /// The stand-ins in the text, for what CommonMark has no way to read.
+    /// Where the stand-ins are in the text, and what each stands for.
     marks: Vec<Mark<'a>>,
     abbreviations: Vec<Abbreviation<'a>>,
     options: Options,
@@ -270,9 +293,10 @@ impl<'a> Document<'a> {
 
     /// The document's events, each with the attributes kramdown gives it.
     ///
-    /// They're read as they're asked for, a block at a time, as attribute
-    /// lists after a block are for it. With tables of contents, they're all
-    /// read first, for the tables to link to the headings after them.
+    /// They're read as they're asked for, a block at a time, since an
+    /// attribute list after a block can still change it. With tables of
+    /// contents on, they're all read first, so a table can link to the
+    /// headings after it.
     pub fn events(&self) -> Events<'_> {
         let reader = read::Reader::new(&self.text, self.options, &self.marks)
             .abbreviating(&self.abbreviations);
@@ -326,7 +350,7 @@ impl<'a> Events<'a> {
         OffsetIter(self)
     }
 
-    /// The next item, its range in the text read.
+    /// The next item, with its range in the rewritten text.
     fn item(&mut self) -> Option<read::Item<'a>> {
         match &mut self.items {
             Items::Streamed(reader) => reader.next(),
@@ -371,11 +395,11 @@ impl fmt::Debug for Events<'_> {
 /// The events of a [`Document`], each with its attributes and the byte
 /// range it came from in the markdown the document was made with.
 ///
-/// The document's markdown may be rewritten a little before it's read, so
-/// pulldown-cmark reads it as kramdown does. A range covering any of what
-/// was rewritten covers all of it in the markdown, and one inside a line
-/// put in is empty, where the line went in. Every range is in order, on
-/// char boundaries, and within the markdown.
+/// The markdown is rewritten in places before pulldown-cmark reads it, so
+/// that it reads as kramdown reads it. A range that covers part of a
+/// rewritten piece covers all of that piece in the markdown. A range inside
+/// a line that was added is empty, at the point where the line went in.
+/// Every range is ordered, on char boundaries, and inside the markdown.
 ///
 /// ```
 /// use pulldown_kram::{Document, Extensions, pulldown_cmark::{Event, Tag}};

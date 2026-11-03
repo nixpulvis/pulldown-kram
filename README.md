@@ -15,12 +15,12 @@ for (event, attributes) in document.events() {
 }
 ```
 
-pulldown-cmark reads the document as CommonMark, after a little rewriting
-where kramdown reads a line differently, and the events it gives are worked
-over for kramdown's additions: attribute lists, header ids, definition lists,
-`$$` math, `markdown="1"` HTML and `{:toc}` tables of contents, among others.
-So a program that renders pulldown-cmark's events renders these too, and can
-pick up the attributes where it wants them.
+pulldown-cmark does the parsing. Where kramdown reads a line differently
+from CommonMark, the text is rewritten first, and the events that come out
+are corrected for kramdown's additions: attribute lists, header ids,
+definition lists, `$$` math, `markdown="1"` HTML and `{:toc}` tables of
+contents, among others. So a program that renders pulldown-cmark's events
+renders these too, and can use the attributes where it wants.
 
 - Each of kramdown's extensions can be left off with `Extensions`.
   `Extensions::all()` reads what kramdown reads.

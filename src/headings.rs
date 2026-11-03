@@ -182,7 +182,7 @@ mod tests {
     use pulldown_cmark::Parser;
 
     /// The items `text` reads as, given ids with every extension, after
-    /// `before` has had its way with them.
+    /// `before` has changed them.
     fn assign<'a>(text: &'a str, before: impl FnOnce(&mut [Item<'a>])) -> Vec<Item<'a>> {
         let mut items: Vec<_> = Parser::new(text)
             .into_offset_iter()

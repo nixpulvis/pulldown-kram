@@ -1,25 +1,25 @@
-//! What to read: which of kramdown's extensions, and any more of
+//! What to read: which of kramdown's extensions, and which more of
 //! pulldown-cmark's options.
 
 use bitflags::bitflags;
 
-/// How to read a [`Document`](crate::Document): the kramdown extensions,
-/// and any of pulldown-cmark's options kramdown doesn't have.
+/// How to read a [`Document`](crate::Document): the kramdown extensions to
+/// turn on, and any of pulldown-cmark's options for syntax kramdown doesn't
+/// have.
 ///
-/// Every part of kramdown's syntax is an [`Extensions`] flag, so
-/// `Extensions::all()` reads what kramdown reads, and converts into these
-/// options with nothing more from pulldown-cmark. Some extensions are
-/// syntax pulldown-cmark reads, like tables, and turn on its option for it.
-/// Those options belong to their extensions, and are on exactly when the
-/// extension is, whatever `cmark` says. `cmark` adds what kramdown doesn't
-/// read, like GitHub's `> [!NOTE]` quotes.
+/// `Extensions::all()` reads what kramdown reads, and needs nothing from
+/// `cmark`. Some extensions are syntax pulldown-cmark reads too, like
+/// tables, and those turn on pulldown-cmark's option for it. That option
+/// is on exactly when the extension is, whatever `cmark` says. `cmark` is
+/// only for what kramdown doesn't read at all, like GitHub's `> [!NOTE]`
+/// quotes.
 ///
-/// `cmark` never turns on `ENABLE_TABLES`, `ENABLE_FOOTNOTES`,
+/// So `cmark` never turns on `ENABLE_TABLES`, `ENABLE_FOOTNOTES`,
 /// `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS`, `ENABLE_SMART_PUNCTUATION`,
-/// `ENABLE_DEFINITION_LIST` or `ENABLE_MATH`, which the extensions decide,
-/// nor `ENABLE_HEADING_ATTRIBUTES`, which reads `{…}` after a heading
-/// differently from kramdown. `ENABLE_OLD_FOOTNOTES` changes footnotes
-/// only with [`Extensions::ENABLE_FOOTNOTES`].
+/// `ENABLE_DEFINITION_LIST` or `ENABLE_MATH`, which belong to extensions.
+/// Nor does it turn on `ENABLE_HEADING_ATTRIBUTES`, which reads `{…}` after
+/// a heading differently from kramdown. `ENABLE_OLD_FOOTNOTES` only changes
+/// anything with [`Extensions::ENABLE_FOOTNOTES`] on.
 ///
 /// ```
 /// use pulldown_kram::{Document, Extensions, Options};
@@ -36,20 +36,20 @@ use bitflags::bitflags;
 pub struct Options {
     /// The kramdown extensions to read.
     pub kramdown: Extensions,
-    /// pulldown-cmark's options for what kramdown doesn't read. Those that
-    /// read an extension are left to it.
+    /// pulldown-cmark's options for syntax kramdown doesn't read. Any that
+    /// belong to an extension are ignored here.
     pub cmark: pulldown_cmark::Options,
 }
 
 impl Options {
-    /// The extensions in `kramdown`, with pulldown-cmark's options in
-    /// `cmark` for anything more.
+    /// The extensions in `kramdown`, and pulldown-cmark's options in `cmark`
+    /// for anything more.
     pub fn new(kramdown: Extensions, cmark: pulldown_cmark::Options) -> Self {
         Self { kramdown, cmark }
     }
 
-    /// The options pulldown-cmark reads with: those the extensions need,
-    /// and the rest of `cmark`.
+    /// The options pulldown-cmark parses with: those the extensions turn on,
+    /// and whatever else `cmark` asks for.
     pub(crate) fn parser_options(&self) -> pulldown_cmark::Options {
         let read =
             Extensions::all().cmark_options() | pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES;
@@ -58,7 +58,8 @@ impl Options {
 }
 
 impl From<Extensions> for Options {
-    /// `kramdown`, with only the options it needs from pulldown-cmark.
+    /// The extensions in `kramdown`, with no more of pulldown-cmark's
+    /// options.
     fn from(kramdown: Extensions) -> Self {
         Self {
             kramdown,
@@ -220,7 +221,7 @@ bitflags! {
 }
 
 impl Extensions {
-    /// The extensions pulldown-cmark reads, and its option for each.
+    /// The extensions pulldown-cmark parses, and its option for each.
     const CMARK: [(Self, pulldown_cmark::Options); 7] = [
         (Self::ENABLE_TABLES, pulldown_cmark::Options::ENABLE_TABLES),
         (
@@ -246,7 +247,7 @@ impl Extensions {
         (Self::ENABLE_MATH, pulldown_cmark::Options::ENABLE_MATH),
     ];
 
-    /// The pulldown-cmark options these extensions are read with.
+    /// The pulldown-cmark options these extensions turn on.
     pub(crate) fn cmark_options(self) -> pulldown_cmark::Options {
         Self::CMARK
             .into_iter()

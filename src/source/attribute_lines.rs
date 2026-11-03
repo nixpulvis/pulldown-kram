@@ -4,10 +4,10 @@ use super::{Fence, Offsets, Rewrite};
 use crate::attributes::AttributeLists;
 
 /// kramdown reads a line of only attribute lists as a block of its own,
-/// ending the one before it. CommonMark reads a line indented as code, or
-/// a link definition, right after it as more of the paragraph the lists
-/// are in, so this puts a blank line between them, outside lists, quotes
-/// and HTML, where one would end more than the paragraph.
+/// which ends the paragraph before it. CommonMark reads that line as more
+/// of the paragraph, and so also any indented code or link definition right
+/// after it. This puts a blank line after such a line, except inside lists,
+/// quotes and HTML, where a blank line would end more than the paragraph.
 pub(crate) struct AttributeLines;
 
 impl AttributeLines {

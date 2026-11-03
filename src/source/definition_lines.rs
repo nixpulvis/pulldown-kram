@@ -4,18 +4,20 @@ use super::{Fence, Offsets, Rewrite};
 use crate::text::Lead;
 
 /// kramdown reads two things about definitions differently from
-/// pulldown-cmark, which this rewrites the lines for. A `:` more than one
-/// blank line after the terms starts no definition, so it's escaped. And a
-/// definition with nothing on its first line has its content indented by
-/// four, not two past the `:`, so the lines of it indented by four or more
-/// lose the difference.
+/// pulldown-cmark, and this rewrites the lines for both.
+///
+/// - A `:` more than one blank line after the terms starts no definition,
+///   so it's escaped.
+/// - A definition with nothing on its first line has its content indented
+///   by four, rather than two past the `:`. So the lines of it indented by
+///   four or more lose the difference.
 pub(crate) struct DefinitionLines {
     out: Rewrite,
     fence: Fence,
     /// The blank lines in a row before this one.
     blanks: usize,
-    /// Whether the lines are in a definition, which a `:` after blank lines
-    /// adds one to.
+    /// Whether the lines are in a definition. Once they are, a `:` after
+    /// blank lines starts another definition, rather than being escaped.
     in_definition: bool,
     /// For a definition with nothing on its first line, the spaces to take
     /// off its lines, and whether a line of it has been read yet.
@@ -86,8 +88,9 @@ impl DefinitionLines {
     }
 
     /// The spaces to take off `line`, if it's indented by four or more in a
-    /// definition with nothing on its first line, which ends at a line
-    /// indented by less than two, or a blank line right after the first.
+    /// definition with nothing on its first line. Such a definition ends at
+    /// a line indented by less than two, or at a blank line right after its
+    /// first.
     fn take_shift(&mut self, line: &str) -> usize {
         let Some((by, started)) = self.shift else {
             return 0;
@@ -107,7 +110,7 @@ impl DefinitionLines {
         if indent >= 4 { by } else { 0 }
     }
 
-    /// Keeps `line`, less `shift` of the four spaces it starts with.
+    /// Copies `line`, taking `shift` of the four spaces it starts with off.
     fn keep(&mut self, line: &str, shift: usize) {
         if shift == 0 {
             self.out.keep(line);

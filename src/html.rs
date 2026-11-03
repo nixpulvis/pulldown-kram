@@ -1,5 +1,8 @@
-//! Writes events out as HTML, the way kramdown's converter writes the
-//! elements they stand for, attributes included.
+//! Writes events as HTML, the way kramdown's converter writes the elements
+//! they stand for, attributes included.
+//!
+//! The functions here match those in `pulldown_cmark::html`, so code that
+//! writes pulldown-cmark's events as HTML can switch by changing the path.
 //!
 //! ```
 //! use pulldown_kram::{Document, Extensions, html};
@@ -19,8 +22,8 @@
 //! table cell holds a no-break space. HTML in the document is written as
 //! it is.
 //!
-//! What kramdown's converter options change isn't followed, like
-//! `footnote_nr`, nor are its ids for the links of tables of contents.
+//! kramdown's converter options, like `footnote_nr`, aren't followed, and
+//! neither are its ids for the links in tables of contents.
 //! References to footnotes never defined can only come with pulldown-cmark's
 //! `ENABLE_OLD_FOOTNOTES`, and link to nothing.
 
@@ -45,7 +48,7 @@ where
     write_html_fmt(s, iter).expect("writing to a String to succeed");
 }
 
-/// Writes the events of `iter` as HTML to `writer`, failing as it fails.
+/// Writes the events of `iter` as HTML to `writer`, failing if it fails.
 pub fn write_html_fmt<'a, I, W>(writer: W, iter: I) -> fmt::Result
 where
     I: Iterator<Item = (Event<'a>, Attributes<'a>)>,

@@ -10,11 +10,11 @@ use crate::text::Lead;
 /// What a stand-in, put in the text by [`StandIns`], stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StandIn<'a> {
-    /// Nothing: an end-of-block marker, or an extension giving nothing.
+    /// Nothing: an end-of-block marker, or an extension that adds nothing.
     Nothing,
     /// A `comment` extension's text.
     Comment(&'a str),
-    /// A `nomarkdown` extension's text, given out as HTML.
+    /// A `nomarkdown` extension's text, to come out as raw HTML.
     Raw(&'a str),
 }
 
@@ -23,19 +23,24 @@ pub(crate) enum StandIn<'a> {
 pub(crate) struct Mark<'a> {
     /// Where it starts.
     pub at: usize,
-    /// Whether it's a block's, rather than a span's.
+    /// Whether it stands in for a block, rather than a span.
     pub block: bool,
     pub stands_for: StandIn<'a>,
 }
 
-/// kramdown's end-of-block marker, a line of only `^`, and its `comment`
-/// and `nomarkdown` extensions, `{::comment}…{:/}`, are text to
-/// CommonMark. This puts a stand-in in place of each, for the reader to
-/// give out what it stands for instead: for a block, an empty HTML
-/// comment, which ends the same blocks a marker does, and for a span, an
-/// autolink, which can't start an HTML block. The extensions' tags that
-/// aren't read as one, like one never closed, are escaped, to stay text as
-/// in kramdown.
+/// Syntax of kramdown's own that CommonMark reads as plain text, replaced
+/// with stand-ins the reader swaps back.
+///
+/// That covers the end-of-block marker, a line of only `^`, the `comment`
+/// and `nomarkdown` extensions, `{::comment}…{:/}`, and abbreviation
+/// definitions. A block's stand-in is an empty HTML comment, which ends the
+/// same blocks a marker does. A span's is an autolink, which can't start an
+/// HTML block. An extension tag that can't be read, like one never closed,
+/// is escaped, so it stays text as in kramdown.
+///
+/// The same pass also puts a header row in each table without one, which
+/// the reader leaves out again, since it needs to know where blocks start
+/// just as the stand-ins do.
 pub(crate) struct StandIns<'a> {
     markdown: &'a str,
     out: Rewrite,
@@ -44,7 +49,7 @@ pub(crate) struct StandIns<'a> {
     comments: bool,
     nomarkdown: bool,
     tables: bool,
-    /// Whether `$$` math is read, a `|` in which is no cell's end.
+    /// Whether `$$` math is read. A `|` inside math doesn't end a cell.
     math: bool,
     /// The abbreviations defined, if they're read.
     abbreviations: Option<Vec<Abbreviation<'a>>>,
@@ -58,12 +63,12 @@ pub(crate) struct Marked<'a> {
     pub abbreviations: Vec<Abbreviation<'a>>,
 }
 
-/// Reading the lines of kramdown's tables.
+/// Reads the lines of kramdown's tables.
 struct TableLine;
 
 impl TableLine {
-    /// Where the `|` in `line` outside code, and math if `math` is read, and
-    /// not escaped, are.
+    /// Where each `|` in `line` is that isn't escaped, in code, or in math
+    /// when `math` is read.
     fn pipes(line: &str, math: bool) -> Vec<usize> {
         let code = Self::code_spans(line);
         let math = if math {
@@ -89,7 +94,7 @@ impl TableLine {
         spans
     }
 
-    /// Where the `|` in code in `line`, and not escaped, are.
+    /// Where each `|` in `line` is that's in code and not escaped.
     fn code_pipes(line: &str) -> Vec<usize> {
         let code = Self::code_spans(line);
         Self::unescaped_pipes(line)
@@ -146,9 +151,9 @@ impl TableLine {
                 .all(|c| matches!(c, '|' | '+' | '-' | ':' | '=' | ' ' | '\t'))
     }
 
-    /// The separator `line` as CommonMark reads a header's, with a cell for
-    /// each of `columns`, aligned as in `line`, if it isn't one already:
-    /// kramdown's may have fewer cells, and `+` between them.
+    /// The header separator `line`, written as CommonMark needs it, with a
+    /// cell for each of `columns`, aligned as in `line`. `None` if it's
+    /// fine as it is. kramdown's may have fewer cells, and `+` between them.
     fn delimiter(line: &str, columns: usize) -> Option<String> {
         let line = line.trim();
         let inside = line.strip_prefix(['|', '+']).unwrap_or(line);
@@ -177,10 +182,10 @@ struct StartTag<'a> {
     name: &'a str,
     /// How long it is.
     len: usize,
-    /// Whether it closes itself, giving nothing.
+    /// Whether it closes itself, holding nothing.
     closed: bool,
-    /// Whether it gives what it holds out as HTML, which a `nomarkdown`
-    /// does unless its `type` is for another converter.
+    /// Whether what it holds comes out as raw HTML, as a `nomarkdown`'s does
+    /// unless its `type` names another converter.
     html: bool,
 }
 
@@ -190,10 +195,11 @@ impl<'a> StandIns<'a> {
     /// What stands in for a span.
     pub const SPAN: &'static str = "<kd:x>";
 
-    /// `markdown`, with a stand-in in place of each end-of-block marker,
-    /// `comment`, `nomarkdown` and abbreviation definition the `extensions`
-    /// read, and a header row put in each table without one, with the
-    /// offsets of the edits, the stand-ins, in order, and the abbreviations.
+    /// `markdown` with its stand-ins and table headers put in, for the
+    /// syntax `extensions` reads.
+    ///
+    /// Along with the text and the offsets of its edits come the stand-ins,
+    /// in order, and the abbreviations defined.
     pub fn rewrite(markdown: &'a str, extensions: Extensions) -> Marked<'a> {
         let reads = |extension| extensions.contains(extension);
         let markers = reads(Extensions::ENABLE_END_OF_BLOCK_MARKERS) && markdown.contains('^');
@@ -232,10 +238,12 @@ impl<'a> StandIns<'a> {
         }
     }
 
-    /// Puts a stand-in in place of the abbreviation definition starting at
-    /// the line at `start`, with the lines of only attribute lists right
-    /// before and after it, which are for it, returning the index of its
-    /// last line, after keeping all but that line's end.
+    /// Replaces the abbreviation definition at the line `start` with a
+    /// stand-in, if there's one there, along with the lines of only
+    /// attribute lists right before and after it, which belong to it.
+    ///
+    /// Returns the index of the last line replaced. Its line break is left
+    /// for the caller to copy.
     fn abbreviation(&mut self, lines: &[&'a str], start: usize) -> Option<usize> {
         self.abbreviations.as_ref()?;
         let only_lists = |line: &'a str| AttributeLists::whole(line.trim());
@@ -337,12 +345,13 @@ impl<'a> StandIns<'a> {
         }
     }
 
-    /// Keeps the table starting at the line at `start`, if one does,
-    /// returning the index of the line after it. A table is the lines with
-    /// a `|` in them outside code, ending at a blank line, the end, or
-    /// attribute lists. One without a separator line gets a header row
-    /// put in for the reader to leave out, and a `|` in code is escaped,
-    /// for CommonMark to read it as kramdown does.
+    /// Copies the table starting at the line `start`, if one does, and
+    /// returns the index of the line after it.
+    ///
+    /// A table is a run of lines with a `|` outside code, ending at a blank
+    /// line, a line of attribute lists, or the end. One without a separator
+    /// line gets a header row, for the reader to leave out. A `|` inside
+    /// code is escaped, so CommonMark keeps it in the cell as kramdown does.
     fn table(&mut self, lines: &[&'a str], start: usize) -> Option<usize> {
         let end = (start..lines.len())
             .find(|&j| TableLine::pipes(lines[j], self.math).is_empty())
@@ -403,8 +412,8 @@ impl<'a> StandIns<'a> {
         Some(end)
     }
 
-    /// Puts a stand-in for `stands_for` in place of `len` bytes, after
-    /// keeping `before`.
+    /// Copies `before`, then writes a stand-in for `stands_for` in place of
+    /// the next `len` bytes.
     fn stand_in(&mut self, before: &str, len: usize, block: bool, stands_for: StandIn<'a>) {
         self.out.keep(before);
         self.marks.push(Mark {
@@ -416,10 +425,11 @@ impl<'a> StandIns<'a> {
         self.out.replace(len, text);
     }
 
-    /// Puts a stand-in in place of the block extension the line at `start`
-    /// starts, after its `lead`, if it's one closed on a line of its own,
-    /// returning the index of that line, after keeping all but its line
-    /// end.
+    /// Replaces the block extension starting on the line `start`, after its
+    /// `lead`, with a stand-in, if it's closed on a line of its own.
+    ///
+    /// Returns the index of the closing line. Its line break is left for
+    /// the caller to copy.
     fn block(&mut self, lines: &[&'a str], start: usize, lead: usize) -> Option<usize> {
         let line = lines[start];
         let content = line[lead..].trim_end();
@@ -443,8 +453,8 @@ impl<'a> StandIns<'a> {
         line.as_ptr() as usize - self.markdown.as_ptr() as usize
     }
 
-    /// Keeps `line`, putting a stand-in in place of each span extension in
-    /// it outside code, and escaping the tags left.
+    /// Copies `line`, replacing each span extension outside code with a
+    /// stand-in and escaping any extension tags left over.
     fn spans(&mut self, line: &'a str) {
         let bytes = line.as_bytes();
         let mut kept = 0;
@@ -491,7 +501,7 @@ impl<'a> StandIns<'a> {
         self.out.keep(&line[kept..]);
     }
 
-    /// What an extension started with `tag`, holding `body`, gives.
+    /// What an extension that starts with `tag` and holds `body` stands for.
     fn giving(tag: &StartTag<'_>, body: &'a str) -> StandIn<'a> {
         match tag.name {
             "comment" => StandIn::Comment(body),
@@ -500,7 +510,8 @@ impl<'a> StandIns<'a> {
         }
     }
 
-    /// The start tag of an extension read, at the start of `text`.
+    /// The start tag at the start of `text`, if it's for an extension that's
+    /// read.
     fn start_tag<'t>(&self, text: &'t str) -> Option<StartTag<'t>> {
         let inside = text.strip_prefix("{::")?;
         let close = inside.find('}')?;
@@ -524,8 +535,8 @@ impl<'a> StandIns<'a> {
         })
     }
 
-    /// The length of the end tag at the start of `text` of an extension
-    /// read, `{:/name}` or `{:/}`.
+    /// The length of the end tag at the start of `text`, `{:/name}` or
+    /// `{:/}`, if it's for an extension that's read.
     fn end_tag(&self, text: &str) -> Option<usize> {
         let inside = text.strip_prefix("{:/")?;
         let name = &inside[..inside.find('}')?];

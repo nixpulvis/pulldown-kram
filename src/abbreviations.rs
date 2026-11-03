@@ -70,7 +70,8 @@ impl<'a> Abbreviation<'a> {
     }
 }
 
-/// The abbreviations of a document, made `<abbr>`s in its text.
+/// A document's abbreviations, for wrapping each use of one in its text in
+/// an `<abbr>`.
 pub(crate) struct Abbreviations<'s, 'a> {
     /// The abbreviations, the last defined of each, longest first.
     defined: Vec<&'s Abbreviation<'a>>,
@@ -120,8 +121,8 @@ impl<'s, 'a> Abbreviations<'s, 'a> {
         *items = out;
     }
 
-    /// Pushes `run`, text and soft breaks, to `out`, each use of an
-    /// abbreviation in it in an `<abbr>`.
+    /// Pushes `run`, a stretch of text and soft breaks, onto `out`, with
+    /// each use of an abbreviation in it wrapped in an `<abbr>`.
     fn replace_in<'i>(&self, run: Vec<Item<'i>>, out: &mut Vec<Item<'i>>)
     where
         'a: 'i,
@@ -192,7 +193,8 @@ impl<'s, 'a> Abbreviations<'s, 'a> {
         }
     }
 
-    /// The part `part` of `item`'s text `t`.
+    /// A text item holding just `part` of `t`, the text of `item`, with
+    /// `item`'s whole range.
     fn text<'i>(item: &Item<'i>, t: &CowStr<'i>, part: std::ops::Range<usize>) -> Item<'i> {
         let text = match t {
             CowStr::Borrowed(t) => CowStr::Borrowed(&t[part]),
@@ -228,7 +230,7 @@ impl<'s, 'a> Abbreviations<'s, 'a> {
     }
 
     /// How long the match for `abbreviation` at the start of `text` is, if
-    /// it matches, its whitespace matching any whitespace.
+    /// there's one. Whitespace in the abbreviation matches any whitespace.
     fn matches(text: &str, abbreviation: &str) -> Option<usize> {
         let mut rest = text;
         for (n, word) in abbreviation.split_whitespace().enumerate() {

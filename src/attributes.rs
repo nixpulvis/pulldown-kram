@@ -38,8 +38,8 @@ impl<'a> Attributes<'a> {
         self.classes.iter().any(|c| c.as_ref() == class)
     }
 
-    /// These attributes, owning what they borrowed from the document, to
-    /// keep after it's gone.
+    /// These attributes with everything they borrow from the document
+    /// copied, so they can outlive it.
     ///
     /// ```
     /// use pulldown_kram::{Attributes, Document, Extensions};
@@ -108,10 +108,13 @@ pub(crate) struct AttributeLists<'a> {
 
 impl<'a> AttributeLists<'a> {
     /// The lists at the start of `text`, if it starts with one, and how
-    /// many bytes they take. Definitions, `{:name: …}`, and the tags of
-    /// kramdown's extensions, `{::name}` and `{:/name}`, are read but give
-    /// nothing, as neither is supported. A tag of any other extension isn't
-    /// a list, and stays text, as in kramdown.
+    /// many bytes they take.
+    ///
+    /// Attribute list definitions, `{:name: …}`, are read but add nothing,
+    /// as they aren't supported. Neither do the tags of kramdown's
+    /// extensions, `{::name}` and `{:/name}`, whose supported uses the
+    /// rewrites have already taken out. The tag of an extension kramdown
+    /// doesn't have isn't a list, and stays text, as in kramdown.
     pub fn parse(text: &'a str) -> Option<(Self, usize)> {
         let mut attribute_lists = Self::default();
         let mut rest = text;
@@ -168,8 +171,8 @@ impl<'a> AttributeLists<'a> {
         }
     }
 
-    /// The parts of a word like `#intro.new`, each its marker and name, or
-    /// `None` for one that isn't an id or class, which ends the word.
+    /// The ids and classes in a word like `#intro.new`, each as its marker
+    /// and name. A part that's neither is `None`, and ends the word.
     fn ids_and_classes_in(word: &'a str) -> impl Iterator<Item = Option<(char, &'a str)>> {
         let mut rest = word;
         std::iter::from_fn(move || {

@@ -4,8 +4,8 @@ use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
 
 use crate::attributes::AttributeLists;
 
-/// An event, where in the source it was read, and what kramdown's
-/// attribute lists give it.
+/// An event, where it was read in the text, and what kramdown's attribute
+/// lists give it.
 #[derive(Debug, Clone)]
 pub(crate) struct Item<'a> {
     pub event: Event<'a>,
@@ -22,7 +22,8 @@ impl<'a> Item<'a> {
         }
     }
 
-    /// Gives a code block without a language the one in a `language-` class.
+    /// Gives a code block without a language the one from its `language-`
+    /// class, if it has one.
     pub(super) fn take_language_from_classes(&mut self) {
         let Event::Start(Tag::CodeBlock(kind)) = &mut self.event else {
             return;
@@ -102,9 +103,9 @@ impl<'a> Item<'a> {
     }
 
     /// Gives the lists in `items` the classes kramdown's GFM parser gives
-    /// task lists: `task-list` to a list with a task in it, and
-    /// `task-list-item` to each of its items from its first task on, before
-    /// any classes from attribute lists.
+    /// task lists. A list with a task in it gets `task-list`, and each of
+    /// its items from the first task on gets `task-list-item`. These come
+    /// before any classes from attribute lists.
     pub(super) fn mark_task_lists(items: &mut [Self]) {
         for list in 0..items.len() {
             if !matches!(items[list].event, Event::Start(Tag::List(_))) {
@@ -139,8 +140,8 @@ impl<'a> Item<'a> {
         }
     }
 
-    /// Whether the content of an item, `rest`, starts with a task's box, as
-    /// it does in its first paragraph if its list is loose.
+    /// Whether `rest`, the content of an item, starts with a task's box. In
+    /// a loose list the box is inside the item's first paragraph.
     pub(super) fn starts_with_task(rest: &[Self]) -> bool {
         let mut events = rest.iter().map(|item| &item.event);
         match events.next() {

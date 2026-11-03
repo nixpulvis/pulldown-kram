@@ -73,11 +73,10 @@ UPDATE_KRAMDOWN_SUITE=1 cargo test --test kramdown_suite
 
 A case that fails unlisted shows its Markdown, each line after a `|`, and
 how pulldown-kram's HTML differs from kramdown's, both normalised: `-` for
-kramdown's, `+` for pulldown-kram's. To see a listed case's, take it off
-the list for a run:
+kramdown's, `+` for pulldown-kram's. To see a listed case's, name it in
+`KRAMDOWN_SUITE_SHOW`, with commas between cases, to check it as if it
+weren't listed:
 
 ```sh
-sed -i '' '/^man\/example /d' tests/kramdown_suite/known-failures.txt
-cargo test --test kramdown_suite -- --exact man/example
-git checkout tests/kramdown_suite/known-failures.txt
+KRAMDOWN_SUITE_SHOW=man/example cargo test --test kramdown_suite -- --exact man/example
 ```
