@@ -1,13 +1,15 @@
 //! Reads pulldown-cmark's events, taking kramdown's attribute lists out of
 //! the text and giving them to the elements they're for.
 
+mod item;
+mod link_definitions;
+mod pending;
+
 use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::ops::Range;
 
-use pulldown_cmark::{
-    CodeBlockKind, CowStr, Event, LinkType, OffsetIter, Parser, RefDefs, Tag, TagEnd,
-};
+use pulldown_cmark::{CowStr, Event, LinkType, OffsetIter, Parser, Tag, TagEnd};
 
 use crate::abbreviations::{Abbreviation, Abbreviations};
 use crate::attributes::AttributeLists;
@@ -16,155 +18,9 @@ use crate::headings::HeaderIds;
 use crate::list_items::ListItems;
 use crate::source::{Mark, MarkdownElements, StandIn};
 use crate::{Extensions, Options};
-
-/// An event, where in the source it was read, and what kramdown's
-/// attribute lists give it.
-#[derive(Debug, Clone)]
-pub(crate) struct Item<'a> {
-    pub event: Event<'a>,
-    pub range: Range<usize>,
-    pub attribute_lists: AttributeLists<'a>,
-}
-
-impl<'a> Item<'a> {
-    pub fn new(event: Event<'a>, range: Range<usize>) -> Self {
-        Self {
-            event,
-            range,
-            attribute_lists: AttributeLists::default(),
-        }
-    }
-
-    /// Gives a code block without a language the one in a `language-` class.
-    fn take_language_from_classes(&mut self) {
-        let Event::Start(Tag::CodeBlock(kind)) = &mut self.event else {
-            return;
-        };
-        if matches!(kind, CodeBlockKind::Fenced(info) if !info.trim().is_empty()) {
-            return;
-        }
-        let language = self
-            .attribute_lists
-            .attributes
-            .classes
-            .iter()
-            .find_map(|class| {
-                let language = class.strip_prefix("language-")?;
-                Some(match class {
-                    CowStr::Borrowed(class) => CowStr::Borrowed(&class["language-".len()..]),
-                    _ => CowStr::from(language.to_owned()),
-                })
-            });
-        if let Some(language) = language {
-            *kind = CodeBlockKind::Fenced(language);
-        }
-    }
-
-    /// Whether `event` is part of a paragraph's text, not a block.
-    pub fn inline(event: &Event<'_>) -> bool {
-        match event {
-            Event::Start(tag) => matches!(
-                tag,
-                Tag::Emphasis
-                    | Tag::Strong
-                    | Tag::Strikethrough
-                    | Tag::Superscript
-                    | Tag::Subscript
-                    | Tag::Link { .. }
-                    | Tag::Image { .. }
-            ),
-            Event::End(tag) => matches!(
-                tag,
-                TagEnd::Emphasis
-                    | TagEnd::Strong
-                    | TagEnd::Strikethrough
-                    | TagEnd::Superscript
-                    | TagEnd::Subscript
-                    | TagEnd::Link
-                    | TagEnd::Image
-            ),
-            Event::Text(_)
-            | Event::Code(_)
-            | Event::InlineMath(_)
-            | Event::DisplayMath(_)
-            | Event::InlineHtml(_)
-            | Event::FootnoteReference(_)
-            | Event::SoftBreak
-            | Event::HardBreak
-            | Event::TaskListMarker(_) => true,
-            Event::Html(_) | Event::Rule => false,
-        }
-    }
-
-    /// The index of the end of the element starting at `start` in `items`.
-    pub fn end_of(items: &[Self], start: usize) -> usize {
-        let mut depth = 0usize;
-        for (i, item) in items.iter().enumerate().skip(start) {
-            match item.event {
-                Event::Start(_) => depth += 1,
-                Event::End(_) => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return i;
-                    }
-                }
-                _ => {}
-            }
-        }
-        items.len() - 1
-    }
-
-    /// Gives the lists in `items` the classes kramdown's GFM parser gives
-    /// task lists: `task-list` to a list with a task in it, and
-    /// `task-list-item` to each of its items from its first task on, before
-    /// any classes from attribute lists.
-    fn mark_task_lists(items: &mut [Self]) {
-        for list in 0..items.len() {
-            if !matches!(items[list].event, Event::Start(Tag::List(_))) {
-                continue;
-            }
-            let mut tasks = false;
-            let mut depth = 0usize;
-            for i in list + 1..Self::end_of(items, list) {
-                if depth == 0 && matches!(items[i].event, Event::Start(Tag::Item)) {
-                    tasks |= Self::starts_with_task(&items[i + 1..]);
-                    if tasks {
-                        items[i]
-                            .attribute_lists
-                            .attributes
-                            .classes
-                            .insert(0, "task-list-item".into());
-                    }
-                }
-                match items[i].event {
-                    Event::Start(_) => depth += 1,
-                    Event::End(_) => depth -= 1,
-                    _ => {}
-                }
-            }
-            if tasks {
-                items[list]
-                    .attribute_lists
-                    .attributes
-                    .classes
-                    .insert(0, "task-list".into());
-            }
-        }
-    }
-
-    /// Whether the content of an item, `rest`, starts with a task's box, as
-    /// it does in its first paragraph if its list is loose.
-    fn starts_with_task(rest: &[Self]) -> bool {
-        let mut events = rest.iter().map(|item| &item.event);
-        match events.next() {
-            Some(Event::TaskListMarker(_)) => true,
-            Some(Event::Start(Tag::Paragraph)) => {
-                matches!(events.next(), Some(Event::TaskListMarker(_)))
-            }
-            _ => false,
-        }
-    }
-}
+pub(crate) use item::Item;
+use link_definitions::LinkDefinitions;
+use pending::{Index, Pending};
 
 /// Reads the events of a document as pulldown-cmark gives them, a block at
 /// a time: a block is given out once the next one starts, as only then is
@@ -194,54 +50,6 @@ pub(crate) struct Reader<'a> {
     abbreviations: Abbreviations<'a, 'a>,
     /// The items ready to give out.
     ready: VecDeque<Item<'a>>,
-}
-
-/// The items read but not yet given out, and the elements open among them.
-/// Indices count every item read, starting from the first, so an index
-/// holds as the items before it are given out.
-#[derive(Default)]
-struct Pending<'a> {
-    slots: Vec<Slot<'a>>,
-    /// The index of the first slot.
-    base: Index,
-    /// The indices of the elements open, innermost last.
-    open: Vec<Index>,
-}
-
-/// Where an item is in `Pending`, counting every item read from the first,
-/// so it holds as the items before it are given out. A position in a slice
-/// of items is a plain `usize`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-struct Index(usize);
-
-impl Index {
-    /// The index `by` items after this one.
-    fn advance(self, by: usize) -> Index {
-        Index(self.0 + by)
-    }
-
-    /// The index of the item right before this one, unless it's the first.
-    fn previous(self) -> Option<Index> {
-        self.0.checked_sub(1).map(Index)
-    }
-}
-
-/// An item read, but not given out until no more lists can be for it.
-struct Slot<'a> {
-    item: Item<'a>,
-    /// For an end, the index of its start.
-    start: Option<Index>,
-}
-
-/// The attribute lists kramdown gives link definitions, for the links that
-/// use them: on the lines right after one, or before it, right before or
-/// alone between blocks.
-#[derive(Default)]
-struct LinkDefinitions<'a> {
-    /// The lists for each definition with any, by its label in lowercase.
-    attribute_lists: Vec<(String, AttributeLists<'a>)>,
-    /// Where each line of lists for a definition starts, in order.
-    lines: Vec<usize>,
 }
 
 /// A paragraph that lists on lines of their own have ended, for the lines
@@ -371,7 +179,7 @@ impl<'a> Reader<'a> {
                     self.settle(block);
                 }
                 let next = self.next.take();
-                let definition = self.link_definition_lists(&event);
+                let definition = self.link_definitions.for_link(&event);
                 let i = self.push(event, range);
                 if let Some(attribute_lists) = definition {
                     self.pending.attach(i, attribute_lists);
@@ -536,31 +344,6 @@ impl<'a> Reader<'a> {
                 break;
             }
         }
-    }
-
-    /// The lists for the link definition `event` uses, if it's the start of
-    /// a link or image by reference to one with any.
-    fn link_definition_lists(&self, event: &Event<'a>) -> Option<AttributeLists<'a>> {
-        if self.link_definitions.attribute_lists.is_empty() {
-            return None;
-        }
-        let Event::Start(Tag::Link { link_type, id, .. } | Tag::Image { link_type, id, .. }) =
-            event
-        else {
-            return None;
-        };
-        if !matches!(
-            link_type,
-            LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
-        ) {
-            return None;
-        }
-        let label = id.to_lowercase();
-        self.link_definitions
-            .attribute_lists
-            .iter()
-            .find(|(other, _)| *other == label)
-            .map(|(_, attribute_lists)| attribute_lists.clone())
     }
 
     /// Whether the element starting at `start` goes on with the one just
@@ -811,7 +594,7 @@ impl<'a> Reader<'a> {
     /// list, quote, definition list or footnote definition they're in.
     /// Those for a link definition are already its links'.
     fn line(&mut self, attribute_lists: AttributeLists<'a>, lazy: bool, start: usize) {
-        if self.link_definitions.lines.binary_search(&start).is_ok() {
+        if self.link_definitions.on_line(start) {
             if matches!(self.pending.last(), Some(item) if matches!(item.event, Event::Start(Tag::Paragraph)))
             {
                 self.skip_soft_break();
@@ -1054,228 +837,6 @@ impl<'a> Iterator for Reader<'a> {
     }
 }
 
-impl<'a> Pending<'a> {
-    /// Pushes `event`, opening the element it starts or closing the one it
-    /// ends, and returns its index.
-    fn push(&mut self, event: Event<'a>, range: Range<usize>) -> Index {
-        let i = self.end();
-        let start = match event {
-            Event::Start(_) => {
-                self.open.push(i);
-                None
-            }
-            Event::End(_) => Some(
-                self.open
-                    .pop()
-                    .expect("pulldown-cmark to balance its events"),
-            ),
-            _ => None,
-        };
-        let item = Item::new(event, range);
-        self.slots.push(Slot { item, start });
-        i
-    }
-
-    /// Takes off the last item, which mustn't be an end, closing it if it's
-    /// open.
-    fn pop(&mut self) -> Option<Item<'a>> {
-        let slot = self.slots.pop()?;
-        debug_assert!(slot.start.is_none(), "an end popped");
-        if self.open.last() == Some(&self.end()) {
-            self.open.pop();
-        }
-        Some(slot.item)
-    }
-
-    /// Takes off the last item, an end, opening again the element it
-    /// closed, and returns the index of the element's start.
-    fn reopen(&mut self) -> Index {
-        let slot = self.slots.pop().expect("an end");
-        let start = slot.start.expect("an end");
-        self.open.push(start);
-        start
-    }
-
-    /// Drops the item at `i` and every one after it, closing those open.
-    fn truncate(&mut self, i: Index) {
-        self.slots.truncate(self.offset(i));
-        self.open.retain(|&open| open < i);
-    }
-
-    /// Takes out the items before `end`, for giving out.
-    fn take_before(&mut self, end: Index) -> Vec<Item<'a>> {
-        if end <= self.base {
-            return Vec::new();
-        }
-        let items = self
-            .slots
-            .drain(..self.offset(end))
-            .map(|slot| slot.item)
-            .collect();
-        self.base = end;
-        items
-    }
-
-    /// Where the item at `i` is in `slots`. `i` mustn't be given out.
-    fn offset(&self, i: Index) -> usize {
-        i.0.checked_sub(self.base.0).expect("an item not given out")
-    }
-
-    fn attach(&mut self, i: Index, attribute_lists: AttributeLists<'a>) {
-        self.item_mut(i).attribute_lists.extend(attribute_lists);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.slots.is_empty()
-    }
-
-    /// The index the next item pushed gets.
-    fn end(&self) -> Index {
-        self.base.advance(self.slots.len())
-    }
-
-    fn last_index(&self) -> Option<Index> {
-        self.end().previous().filter(|_| !self.slots.is_empty())
-    }
-
-    fn last(&self) -> Option<&Item<'a>> {
-        self.slots.last().map(|slot| &slot.item)
-    }
-
-    fn get(&self, i: Index) -> Option<&Item<'a>> {
-        if i < self.base {
-            return None;
-        }
-        let slot = self.slots.get(self.offset(i))?;
-        Some(&slot.item)
-    }
-
-    fn item(&self, i: Index) -> &Item<'a> {
-        &self.slots[self.offset(i)].item
-    }
-
-    fn item_mut(&mut self, i: Index) -> &mut Item<'a> {
-        let offset = self.offset(i);
-        &mut self.slots[offset].item
-    }
-
-    /// The index of the start of the end at `i`.
-    fn start_of(&self, i: Index) -> Index {
-        self.slots[self.offset(i)].start.expect("an end")
-    }
-
-    /// The indices of the elements open, outermost first.
-    fn open(&self) -> impl Iterator<Item = Index> + '_ {
-        self.open.iter().copied()
-    }
-
-    /// The index of the innermost element open.
-    fn innermost(&self) -> Option<Index> {
-        self.open.last().copied()
-    }
-
-    /// Whether the innermost open element is a paragraph with nothing in it.
-    fn is_empty_paragraph(&self) -> bool {
-        self.innermost().is_some_and(|i| {
-            self.last_index() == Some(i)
-                && matches!(self.item(i).event, Event::Start(Tag::Paragraph))
-        })
-    }
-
-    fn in_code_block(&self) -> bool {
-        self.innermost()
-            .is_some_and(|i| matches!(self.item(i).event, Event::Start(Tag::CodeBlock(_))))
-    }
-}
-
-impl<'a> LinkDefinitions<'a> {
-    /// The lists for the link `definitions` read from `text`.
-    fn read(text: &'a str, definitions: &RefDefs<'_>) -> Self {
-        let mut spans: Vec<_> = definitions
-            .iter()
-            .map(|(label, definition)| (label, definition.span.clone()))
-            .collect();
-        spans.sort_by_key(|(_, span)| span.start);
-        let mut found = Self::default();
-        // Where the lines given to a definition so far end.
-        let mut taken = 0;
-        for (label, span) in spans {
-            let lines = found.lines.len();
-            let mut attribute_lists = AttributeLists::default();
-            for (start, before) in Self::before(text, span.start, taken) {
-                found.lines.push(start);
-                attribute_lists.extend(before);
-            }
-            let mut line = Self::line_end(text, span.end.saturating_sub(1));
-            while let Some((start, after, end)) = Self::attribute_lists_on(text, line) {
-                found.lines.push(start);
-                attribute_lists.extend(after);
-                line = end;
-            }
-            taken = taken.max(line);
-            if found.lines.len() > lines {
-                found
-                    .attribute_lists
-                    .push((label.to_lowercase(), attribute_lists));
-            }
-        }
-        found
-    }
-
-    /// The lists before the definition at `start`, on the lines right
-    /// before it, or alone between blocks before it, from the first, each
-    /// with where it starts. Lines before `taken` are another's.
-    fn before(text: &'a str, start: usize, taken: usize) -> Vec<(usize, AttributeLists<'a>)> {
-        let mut attribute_lists = Vec::new();
-        let mut above = Self::line_before(text, Self::line_start(text, start));
-        while let Some(line) = above
-            && text[line..Self::line_end(text, line)].trim().is_empty()
-        {
-            above = Self::line_before(text, line);
-        }
-        while let Some(line) = above
-            && line >= taken
-            && let Some((start, found, _)) = Self::attribute_lists_on(text, line)
-        {
-            attribute_lists.push((start, found));
-            above = Self::line_before(text, line);
-        }
-        // Right after another block, they're for it.
-        if above.is_some_and(|line| !text[line..Self::line_end(text, line)].trim().is_empty()) {
-            return Vec::new();
-        }
-        attribute_lists.reverse();
-        attribute_lists
-    }
-
-    /// The lists alone on the line starting at `line`, if any, with where
-    /// they start and where the next line starts.
-    fn attribute_lists_on(
-        text: &'a str,
-        line: usize,
-    ) -> Option<(usize, AttributeLists<'a>, usize)> {
-        let end = Self::line_end(text, line);
-        let content = text.get(line..end)?;
-        let trimmed = content.trim();
-        let indent = content.len() - content.trim_start().len();
-        let (attribute_lists, len) = AttributeLists::parse(trimmed).filter(|_| indent < 4)?;
-        (len == trimmed.len()).then_some((line + indent, attribute_lists, end))
-    }
-
-    fn line_start(text: &str, at: usize) -> usize {
-        text[..at].rfind('\n').map_or(0, |i| i + 1)
-    }
-
-    /// Where the line after the one `at` is on starts, or the text ends.
-    fn line_end(text: &str, at: usize) -> usize {
-        text[at..].find('\n').map_or(text.len(), |i| at + i + 1)
-    }
-
-    fn line_before(text: &str, line: usize) -> Option<usize> {
-        (line > 0).then(|| Self::line_start(text, line - 1))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1351,78 +912,5 @@ mod tests {
         let items = read("* {:.x}   a\n\n* b\n");
         assert_eq!(classed(&items), [("li", "x".into())]);
         assert_eq!(text(&items), "ab");
-    }
-
-    #[test]
-    fn pending_indices_hold_as_items_are_given_out() {
-        let mut pending = Pending::default();
-        let start = pending.push(Event::Start(Tag::Paragraph), 0..2);
-        let text = pending.push(Event::Text("a".into()), 0..1);
-        let end = pending.push(Event::End(TagEnd::Paragraph), 0..2);
-        assert_eq!(pending.take_before(text).len(), 1);
-        assert!(pending.get(start).is_none());
-        assert_eq!(pending.item(text).event, Event::Text("a".into()));
-        assert_eq!(pending.start_of(end), start);
-        assert_eq!(pending.last_index(), Some(end));
-        // What's already given out can't be given again.
-        assert!(pending.take_before(start).is_empty());
-        assert_eq!(pending.push(Event::Rule, 2..3), Index(3));
-    }
-
-    #[test]
-    fn pending_closes_what_it_drops() {
-        let mut pending = Pending::default();
-        let table = pending.push(Event::Start(Tag::Table(Vec::new())), 0..1);
-        let row = pending.push(Event::Start(Tag::TableRow), 0..1);
-        pending.push(Event::Start(Tag::TableCell), 0..1);
-        pending.truncate(row);
-        assert_eq!(pending.innermost(), Some(table));
-        assert_eq!(pending.last_index(), Some(table));
-
-        pending.push(Event::Start(Tag::Paragraph), 0..1);
-        assert!(pending.is_empty_paragraph());
-        pending.pop();
-        assert_eq!(pending.innermost(), Some(table));
-        // Popping what isn't open leaves the open elements be.
-        pending.push(Event::SoftBreak, 0..1);
-        pending.pop();
-        assert_eq!(pending.innermost(), Some(table));
-    }
-
-    #[test]
-    fn item_end_of_finds_the_matching_end() {
-        let items: Vec<_> = [
-            Event::Start(Tag::List(None)),
-            Event::Start(Tag::Item),
-            Event::Text("a".into()),
-            Event::End(TagEnd::Item),
-            Event::Start(Tag::Item),
-            Event::End(TagEnd::Item),
-            Event::End(TagEnd::List(false)),
-        ]
-        .into_iter()
-        .map(|event| Item::new(event, 0..0))
-        .collect();
-        assert_eq!(Item::end_of(&items, 0), 6);
-        assert_eq!(Item::end_of(&items, 1), 3);
-        assert_eq!(Item::end_of(&items, 4), 5);
-        // Cut off before its end, the element runs to the last item.
-        assert_eq!(Item::end_of(&items[..3], 0), 2);
-    }
-
-    #[test]
-    fn item_take_language_from_classes_when_the_fence_has_none() {
-        let language = |kind| {
-            let mut item = Item::new(Event::Start(Tag::CodeBlock(kind)), 0..0);
-            item.attribute_lists.attributes.classes =
-                vec!["x".into(), "language-rb".into(), "language-py".into()];
-            item.take_language_from_classes();
-            item.event
-        };
-        let fenced =
-            |info: &'static str| Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info.into())));
-        assert_eq!(language(CodeBlockKind::Indented), fenced("rb"));
-        assert_eq!(language(CodeBlockKind::Fenced(" ".into())), fenced("rb"));
-        assert_eq!(language(CodeBlockKind::Fenced("c".into())), fenced("c"));
     }
 }
