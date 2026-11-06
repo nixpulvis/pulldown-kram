@@ -1,8 +1,7 @@
-//! kramdown's own test cases, and pulldown-kram's additions to them, read
-//! with pulldown-kram and checked against the HTML kramdown makes of them.
-//! Each case is a test of its own, named by its path. README.md here says
-//! where the cases come from, how to regenerate them, and how the list of
-//! known failures works.
+//! kramdown's own test cases, and pulldown-kram's, read with pulldown-kram
+//! and checked against the HTML kramdown makes of them. Each case is a test
+//! of its own, named by its path. README.md here says where the cases come
+//! from, how to regenerate them, and how the list of known failures works.
 
 mod diff;
 mod normalise;
@@ -109,8 +108,13 @@ impl Case {
                         .unwrap_or_else(|| panic!("cases.txt: no extension {flag}"));
                 }
                 // kramdown's cases are named by their path under testcases,
-                // the additions by theirs under the suite.
-                let path = if name.starts_with("additions/") {
+                // pulldown-kram's by theirs under the suite.
+                let path = if let Some(case) = name.strip_prefix("extensions/") {
+                    let extension = case.split('/').next().unwrap_or_default();
+                    Extensions::from_name(&format!("ENABLE_{}", extension.to_uppercase()))
+                        .unwrap_or_else(|| panic!("{name}: no extension for {extension}/"));
+                    suite.join(name)
+                } else if name.starts_with("core/") {
                     suite.join(name)
                 } else {
                     suite.join("testcases").join(name)
@@ -261,8 +265,8 @@ impl KnownFailures {
     /// already given for them.
     fn rewrite(&self, failed: &[Failure]) {
         let mut list = String::from(
-            "# The suite's cases pulldown-kram reads differently, kramdown's and the\n\
-             # additions, checked by tests/kramdown_suite/main.rs. A case on each\n\
+            "# The suite's cases pulldown-kram reads differently, kramdown's and its\n\
+             # own, checked by tests/kramdown_suite/main.rs. A case on each\n\
              # line, with an optional reason. UPDATE_KRAMDOWN_SUITE=1 cargo test\n\
              # --test kramdown_suite rewrites it.\n",
         );

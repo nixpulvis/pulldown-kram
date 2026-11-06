@@ -1,8 +1,10 @@
-//! Writes events as HTML, the way kramdown's converter writes the elements
-//! they stand for, attributes included.
+//! HTML rendering that matches kramdown's output, attributes included.
 //!
-//! The functions here match those in `pulldown_cmark::html`, so code that
-//! writes pulldown-cmark's events as HTML can switch by changing the path.
+//! Mirrors [`pulldown_cmark::html`][cmark]: the same functions, but taking
+//! the `(Event, Attributes)` pairs from
+//! [`Document::events`](crate::Document::events) instead of bare events.
+//!
+//! [cmark]: https://docs.rs/pulldown-cmark/0.13/pulldown_cmark/html/index.html
 //!
 //! ```
 //! use pulldown_kram::{Document, Extensions, html};
@@ -13,19 +15,19 @@
 //! assert_eq!(out, "<h1 id=\"hi\">Hi</h1>\n<p>See <em class=\"new\">this</em>.</p>\n");
 //! ```
 //!
-//! Like kramdown, footnotes are numbered in the order they're first referred
-//! to, and written after the rest, with links back to each reference. Their
-//! definitions are held until then, while everything else is written as it
-//! comes. A math block alone in its paragraph is written as `\[…\]`, inline
+//! As in kramdown, footnotes are numbered in the order they're first
+//! referenced and rendered at the end, with links back to each reference.
+//! Footnote definitions are held until then; everything else is written as
+//! it arrives. Math alone in its paragraph is written as `\[…\]`, and inline
 //! math as `\(…\)`, for MathJax to render. Code isn't highlighted: a code
-//! block's language is its class, `language-…`, on its `<code>`. An empty
-//! table cell holds a no-break space. HTML in the document is written as
-//! it is.
+//! block's language becomes a `language-…` class on its `<code>`. Empty
+//! table cells contain a no-break space. Raw HTML in the document is written
+//! unchanged.
 //!
-//! kramdown's converter options, like `footnote_nr`, aren't followed, and
-//! neither are its ids for the links in tables of contents.
-//! References to footnotes never defined can only come with pulldown-cmark's
-//! `ENABLE_OLD_FOOTNOTES`, and link to nothing.
+//! kramdown's converter options, like `footnote_nr`, aren't supported, nor
+//! are the ids kramdown gives the links in tables of contents. References to
+//! undefined footnotes can only occur with pulldown-cmark's
+//! `ENABLE_OLD_FOOTNOTES`, and link nowhere.
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -40,7 +42,7 @@ use crate::Attributes;
 /// An event, with its attributes.
 type Attributed<'a> = (Event<'a>, Attributes<'a>);
 
-/// Writes the events of `iter` as HTML onto the end of `s`.
+/// Renders the events of `iter` as HTML, appending to `s`.
 pub fn push_html<'a, I>(s: &mut String, iter: I)
 where
     I: Iterator<Item = (Event<'a>, Attributes<'a>)>,
@@ -48,7 +50,8 @@ where
     write_html_fmt(s, iter).expect("writing to a String to succeed");
 }
 
-/// Writes the events of `iter` as HTML to `writer`, failing if it fails.
+/// Renders the events of `iter` as HTML to `writer`, returning its error if
+/// a write fails.
 pub fn write_html_fmt<'a, I, W>(writer: W, iter: I) -> fmt::Result
 where
     I: Iterator<Item = (Event<'a>, Attributes<'a>)>,
@@ -63,9 +66,9 @@ where
     html.write_footnotes()
 }
 
-/// Writes the events of `iter` as HTML to `writer`, returning the first
-/// error it gives. The writer isn't buffered here, so a buffered one, like
-/// `std::io::BufWriter`, saves many small writes.
+/// Renders the events of `iter` as HTML to `writer`, returning the first
+/// error it produces. Writes aren't buffered, so wrapping `writer` in a
+/// [`BufWriter`](std::io::BufWriter) avoids many small writes.
 pub fn write_html_io<'a, I, W>(writer: W, iter: I) -> io::Result<()>
 where
     I: Iterator<Item = (Event<'a>, Attributes<'a>)>,

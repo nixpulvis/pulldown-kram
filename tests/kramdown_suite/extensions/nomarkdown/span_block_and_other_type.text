@@ -1,0 +1,9 @@
+a {::nomarkdown}*b*{:/} c
+
+{::nomarkdown}
+<i>d</i>
+{:/}
+
+{::nomarkdown type="latex"}
+e
+{:/}

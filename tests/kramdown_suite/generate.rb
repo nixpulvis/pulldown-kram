@@ -1,6 +1,6 @@
 # Regenerates the expected HTML of the suite's cases, kramdown's own test
-# cases and pulldown-kram's additions, as kramdown reads them the way Jekyll
-# runs it, for tests/kramdown_suite/main.rs.
+# cases and pulldown-kram's, as kramdown reads them the way Jekyll runs it,
+# for tests/kramdown_suite/main.rs.
 #
 #     ruby tests/kramdown_suite/generate.rb
 #
@@ -9,8 +9,10 @@
 # `options` file, copied unchanged. kramdown is MIT licensed; its notice is
 # in COPYING here. Each case is named by its path under testcases/.
 #
-# The inputs in additions/ are pulldown-kram's own, for what kramdown's
-# cases don't cover, each named by its path with `additions/` before it.
+# The inputs in extensions/ and core/ are pulldown-kram's own, each named by
+# its path under the suite: extensions/<name>/ for what one of its
+# extensions reads, `extensions/tables/` for `ENABLE_TABLES`, and core/ for
+# what it reads with none.
 #
 # Each case is converted with kramdown 2.5.2 and kramdown-parser-gfm 1.1.0
 # to `<case>.html`, beside its `.text`, with these options:
@@ -18,8 +20,8 @@
 # 1. The case's options, as kramdown's runner (test/test_files.rb) finds
 #    them: the case's `.options` file, or else an `options` file in its
 #    directory, or else, for kramdown's cases,
-#    `{auto_ids: false, footnote_nr: 1}`, as its runner gives, and for the
-#    additions none, as Jekyll gives.
+#    `{auto_ids: false, footnote_nr: 1}`, as its runner gives, and for
+#    pulldown-kram's none, as Jekyll gives.
 # 2. With kramdown's default for each option pulldown-kram doesn't
 #    support, in UNSUPPORTED below, in place of the case's own.
 # 3. Merged over those, always:
@@ -101,7 +103,8 @@ DEFAULT = { auto_ids: false, footnote_nr: 1 }.freeze
 # for a case giving none.
 SOURCES = [
   ['testcases', '', DEFAULT],
-  ['additions', 'additions/', {}],
+  ['core', 'core/', {}],
+  ['extensions', 'extensions/', {}],
 ].freeze
 
 cases = SOURCES.flat_map do |dir, prefix, default|

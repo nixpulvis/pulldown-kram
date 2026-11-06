@@ -9,6 +9,8 @@ The first release.
 - `Extensions` turns each of kramdown's extensions on or off, and `Options`
   adds pulldown-cmark's options for what kramdown doesn't read.
   `Options::default()` reads what kramdown reads.
+- `Extensions::streamable()` turns on every extension but tables of
+  contents, so events are returned a block at a time.
 - `Events::into_offset_iter` gives each event's byte range in the original
   text, past the rewriting done before pulldown-cmark reads it.
 - `html::push_html`, `html::write_html_fmt` and `html::write_html_io`

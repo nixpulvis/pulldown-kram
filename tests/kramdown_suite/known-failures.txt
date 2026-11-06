@@ -1,5 +1,5 @@
-# The suite's cases pulldown-kram reads differently, kramdown's and the
-# additions, checked by tests/kramdown_suite/main.rs. A case on each
+# The suite's cases pulldown-kram reads differently, kramdown's and its
+# own, checked by tests/kramdown_suite/main.rs. A case on each
 # line, with an optional reason. UPDATE_KRAMDOWN_SUITE=1 cargo test
 # --test kramdown_suite rewrites it.
 block/03_paragraph/standalone_image # attribute list references ({:standalone}) dropped, no <figure>
@@ -8,12 +8,12 @@ block/04_header/setext_header # setext underline after indented code and lists
 block/06_codeblock/error # ~~~~~~ without a closing fence starts a code block
 block/06_codeblock/lazy # lazy lines wrapped onto an indented code block
 block/06_codeblock/no_newline_at_end_1 # lazy lines wrapped onto an indented code block
-block/07_horizontal_rule/error # long dash runs made into other dashes
+block/07_horizontal_rule/error # long dash runs made into other dashes, a typography difference
 block/08_list/escaping # lists starting at any number interrupting a paragraph
 block/08_list/lazy_and_nested # list nesting by indentation under an ordered item
-block/08_list/mixed # tab-indented nesting read as code
+block/08_list/mixed # mixed tabs and spaces after a list marker
 block/08_list/other_first_element # code in an item with nothing on its first line indented by two, not four
-block/08_list/special_cases # nested list after a paragraph in an item
+block/08_list/special_cases # nested list after a paragraph in an item; end-of-block marker wrapping the last item in a paragraph
 block/09_html/cdata_section # CDATA kept, kramdown writes its content
 block/09_html/comment # comment on a quote's line starts an HTML block
 block/09_html/content_model/tables # markdown="span" on table cells left as HTML
@@ -32,11 +32,11 @@ block/11_ial/simple # attribute list definitions; block attribute list after a l
 block/12_extension/options # options extension; markdown="1" span content
 block/13_definition_list/auto_ids # {:auto_ids} on definition lists; definition attribute lists
 block/13_definition_list/item_ial # definition attribute lists
-block/14_table/errors # separator line alone read as a table
+block/14_table/errors # two separator lines alone read as a table
 block/14_table/escaping # code span over two lines of a table
 block/14_table/footer # footer separator lines
-block/14_table/header # separator lines in a table body
-block/14_table/simple # <code> HTML over a cell's |
+block/14_table/header # separator lines in a table body; a separator line before the header; a tab in a separator line
+block/14_table/simple # <code> HTML over a cell's |; a row starting with | after one that doesn't
 encoding # markdown='1', in single quotes, not read
 man/example # separator lines in a table body
 span/01_link/image_in_a # image markup inside image alt text
@@ -56,17 +56,81 @@ span/05_html/normal # processing instructions; invalid and block tags in a parag
 span/05_html/xml # XML-namespaced tags not read as HTML
 span/abbreviations/abbrev_in_html # markdown="span" left in the HTML, its text not read
 span/autolinks/url_links # autolink text keeps mailto:; entities in autolinks; non-ASCII email autolinks
-span/extension/options # options extension
+span/extension/options # options extension's span form left as text
 span/math/normal # \$ escapes before $$ math kept or read differently
-span/text_substitutions/typography # guillemets; << read as an HTML tag
+span/text_substitutions/typography # guillemets; << read as an HTML tag; smart quotes placed differently
 span/text_substitutions/typography_subst # guillemets from << and >> read as text or HTML
-additions/block/html_blank_line # HTML blocks end at a blank line, as CommonMark ends them, not at the end tag
-additions/block/list_fence_indent # a fence's indent past a list item's content stripped from its lines, kramdown keeps it
-additions/block/list_lazy_fence # unindented fence after a list item's text ends the list; kramdown keeps it in the item, without the item's indent
-additions/block/math_after_block # $$ block after a fence or header with no blank line between, kramdown reads inline math in a paragraph
-additions/block/span_tag_alone # a line of only a span tag with a blank line after it is an HTML block, kramdown makes it a paragraph
-additions/span/autolink_mailto # <mailto:…> autolink text keeps the mailto:
-additions/span/emphasis_in_emphasis # emphasis inside the same emphasis
-additions/span/image_alt # image alt text with its markup read and quotes made typographic, kramdown takes it as written
-additions/span/link_text_brackets # link text with brackets
-additions/span/strong_emphasis # ***a*** nesting order
+core/autolink_edges # autolinks with a space or a non-ASCII email address left as text
+core/autolink_mailto # <mailto:…> autolink text keeps the mailto:
+core/code_span_spaces # a backtick next to a space opens a code span; kramdown keeps it literal
+core/emphasis_in_emphasis # emphasis inside the same emphasis
+core/fence_indent # a fence indented 1-3 spaces strips that indent from its lines; kramdown keeps it
+core/fence_info_words # words after a fence's language still make a code block; kramdown reads a paragraph
+core/html_custom_tag # an unknown tag after a paragraph's line stays in the paragraph; kramdown starts an HTML block
+core/html_span_raw_elements # Markdown read in HTML spans kramdown leaves raw, like <u>
+core/image_alt # image alt text with its markup read and quotes made typographic, kramdown takes it as written
+core/indented_header # an atx header or setext underline indented by a space makes a header; kramdown keeps text
+core/lazy_block_start # a lazy line starting a header or quote ends the quote or list item; kramdown's GFM parser keeps it inside
+core/link_def_edges # link definitions with a space in the URL or a parenthesised title not read as kramdown reads them
+core/link_def_last # the first link definition of a name wins; kramdown takes the last
+core/link_nested # a link inside link text makes the inner one the link; kramdown makes the outer one
+core/link_text_brackets # link text with brackets
+core/link_titles # an empty link title accepted; a parenthesised title read as a title, kramdown puts it in the URL
+core/list_fence_indent # a fence's indent past a list item's content stripped from its lines, kramdown keeps it
+core/list_lazy_fence # unindented fence after a list item's text ends the list; kramdown keeps it in the item, without the item's indent
+core/list_ordered_after_item # an ordered item right after an unordered one starts a new list; kramdown nests it in the item
+core/list_paren_marker # 1) read as an ordered list marker; kramdown reads text
+core/list_start_number # an ordered list keeps its first number; kramdown numbers from 1
+core/list_wide_marker # five or more spaces after a list marker start a code block, as in CommonMark; kramdown starts the item's text there
+core/quote_tab # a tab after a quote marker counted toward a code block's indent by kramdown, read as a paragraph
+core/rule_after_paragraph # a rule ends a paragraph or a lazy quote line; kramdown keeps it as text
+core/rule_list_item # * * * after a list item is a rule; kramdown reads a nested list item
+core/setext_after_lines # setext underline after a paragraph of two lines makes a header; kramdown keeps the paragraph
+core/strong_emphasis # ***a*** nesting order
+core/term_attribute_list # term attribute lists, {:#id} before a term, left as text
+extensions/auto_ids/images_and_raw_spans # header ids include an image's alt text and leave out raw HTML spans' text; kramdown does the opposite
+extensions/block_attributes/duplicate_attributes # an attribute list's attribute written beside the element's own of the same name
+extensions/block_attributes/indented # an attribute list indented by four read; kramdown keeps it as text
+extensions/comments/in_blockquote # the comment extension in a quote left as text
+extensions/definition_lists/first_line_indent # a definition's first line indented by four or more is code; kramdown strips the whitespace
+extensions/definition_lists/marker_space # a definition marker without a space after it is read
+extensions/definition_lists/term_span # a span over two terms' lines keeps them one term
+extensions/end_of_block_markers/after_html_block # an end-of-block marker after an HTML block kept as text
+extensions/end_of_block_markers/indented # an indented ^ read as an end-of-block marker; kramdown keeps it as text
+extensions/footnotes/after_paragraph # a footnote definition right after a paragraph's line is read; kramdown keeps it as text
+extensions/footnotes/definitions # the first footnote definition of a name wins; lazy lines continue a definition
+extensions/header_ids/before_closing_hashes # an id before an atx header's closing hashes taken as its id; kramdown keeps it as text
+extensions/header_ids/xml_names # header ids kramdown accepts as XML names, like {#a.b} and {#_x}, left as text
+extensions/html_block_ends/blank_line # HTML blocks end at a blank line, as CommonMark ends them, not at the end tag
+extensions/html_block_ends/element_names # HTML blocks of elements outside a fixed list, like <details>, run to a blank line
+extensions/html_block_ends/end_tag_in_comment # an end tag inside a comment ends the HTML block early
+extensions/html_block_ends/in_blockquote # HTML blocks in a quote run to a blank line
+extensions/item_attributes/two_lists # two item attribute lists merged; kramdown reads only the first
+extensions/kramdown_escapes/link_urls # backslash escapes applied in link URLs and titles; kramdown keeps the backslashes
+extensions/list_item_paragraphs/end_of_block_marker # an end-of-block marker after a list doesn't wrap its last item in a paragraph
+extensions/markdown_attribute/span_elements # markdown="1" on span-content elements like <p> not read
+extensions/markdown_attribute/text_around_tags # markdown="1" with text on the start tag's line not read, nor text after the end tag
+extensions/math/block_after_block # $$ block after a fence or header with no blank line between, kramdown reads inline math in a paragraph
+extensions/math/block_before_block # a math block needn't end on a block boundary; kramdown reads inline math
+extensions/math/block_blank_line # a blank line in a math block splits it into paragraphs
+extensions/math/block_in_item # $$ alone in a list item is inline math; kramdown reads a math block
+extensions/math/inline_escape # \$$ … $$ left literal; kramdown reads inline math in a paragraph
+extensions/nomarkdown/in_blockquote # the nomarkdown extension in a quote left as text
+extensions/raw_html_spans/nested_tag # a nested tag of the same name ends a raw HTML span's text early
+extensions/span_attributes/collapsed_reference # span attribute lists after a collapsed reference link, [ref][], left as text
+extensions/span_attributes/empty_list_alone # {::} on a line of its own dropped; kramdown keeps it as text
+extensions/span_attributes/html_and_math # span attribute lists after HTML spans and inline math left as text
+extensions/span_tag_paragraphs/blank_line_after # a line of only a span tag with a blank line after it is an HTML block, kramdown makes it a paragraph
+extensions/span_tag_paragraphs/in_pre # a line of only a span tag joined to the next inside <pre>
+extensions/strikethrough/tilde_runs # ~~a~~~ left as text; ~~~a~~~ read as a fence
+extensions/tables/end # a table with a header ends only at a blank line, taking the next line as a row; kramdown reads a paragraph
+extensions/tables/header_only # a header and separator line without a body make a table; kramdown reads a paragraph
+extensions/tables/header_rows # several header rows above the separator line make a paragraph and a table
+extensions/tables/wide_row # cells past the header's width dropped; kramdown widens the table
+extensions/tables_of_contents/first_list_only # every list marked {:toc} made a table of contents; kramdown makes only the first
+extensions/tables_without_headers/code_backslash # a \| in a code span in a table cell loses its backslash
+extensions/tables_without_headers/in_containers # tables without a header in quotes, list items and footnotes left as text, with an empty <table> put out
+extensions/tables_without_headers/leading_pipe # a row starting with | after one that doesn't gets no empty first cell
+extensions/tables_without_headers/math_pipe # a | in inline math makes no table row; kramdown reads one
+extensions/task_lists/empty_box_and_item_attributes # an empty [ ] made a task; [x] after an item attribute list left as text
+extensions/typography/smart_quotes # smart quotes kramdown places differently, like 'Tis and 5'10"

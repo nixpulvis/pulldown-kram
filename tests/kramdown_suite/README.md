@@ -1,10 +1,11 @@
 # kramdown's test cases
 
-kramdown's own test cases, and pulldown-kram's additions to them, read with
-pulldown-kram and checked against the HTML kramdown makes of them, as
-pulldown-cmark checks itself against the CommonMark spec.
-`cargo test --test kramdown_suite` runs them, each case a test named by its
-path, so `cargo test --test kramdown_suite block/04_header` runs only those.
+kramdown's own test cases, and pulldown-kram's, read with pulldown-kram and
+checked against the HTML kramdown makes of them, as pulldown-cmark checks
+itself against the CommonMark spec. `cargo test --test kramdown_suite` runs
+them, each case a test named by its path, so
+`cargo test --test kramdown_suite block/04_header` runs only those, and
+`cargo test --test kramdown_suite extensions/tables/` one extension's.
 
 ## Where they're from
 
@@ -19,13 +20,21 @@ The `.html` beside each `.text` isn't kramdown's own. It's made by
 [kramdown-parser-gfm 1.1.0][gfm], reading GFM as Jekyll does, so it's what a
 Jekyll site would show. Its header says exactly how.
 
-`additions/` holds pulldown-kram's own cases, for what kramdown's don't
-cover, like Markdown found on Jekyll sites that kramdown and pulldown-kram
-read differently. Each is named by its path with `additions/` before it,
-like `additions/block/span_tag_alone`, and converted with kramdown's
-defaults, as Jekyll converts, unless an `.options` file beside it or an
-`options` file in its directory gives others. To add one, write its
-`.text` there and regenerate.
+pulldown-kram's own cases are in two places, each named by its path under
+the suite:
+
+- `extensions/` has a directory for each of pulldown-kram's extensions,
+  named after it without `ENABLE_`, so `extensions/tables/` holds what
+  `ENABLE_TABLES` reads. Its cases cover what the extension gets right and
+  what it doesn't yet, so the known failures under a directory show how
+  much of that extension is still missing. A directory that names no
+  extension stops the suite.
+- `core/` holds what's read with no extension, where pulldown-cmark's
+  CommonMark and kramdown agree or differ.
+
+Each is converted with kramdown's defaults, as Jekyll converts, unless an
+`.options` file beside it or an `options` file in its directory gives
+others. To add one, write its `.text` there and regenerate.
 
 [testcases]: https://github.com/gettalong/kramdown/tree/REL_2_5_2/test/testcases
 [gfm]: https://github.com/kramdown/parser-gfm/tree/REL_1_1_0
@@ -35,7 +44,8 @@ defaults, as Jekyll converts, unless an `.options` file beside it or an
 | File | What it is |
 |---|---|
 | `testcases/` | kramdown's inputs and options, and the HTML made of them |
-| `additions/` | pulldown-kram's own inputs, and the HTML kramdown makes of them |
+| `extensions/` | pulldown-kram's inputs for each extension, and the HTML kramdown makes of them |
+| `core/` | pulldown-kram's inputs for what's read with no extension, and the HTML kramdown makes of them |
 | `COPYING` | kramdown's license |
 | `generate.rb` | makes the HTML, `cases.txt` and `entities.txt` |
 | `cases.txt` | each case, the extensions to read it without, and the unsupported options kramdown used its defaults for |

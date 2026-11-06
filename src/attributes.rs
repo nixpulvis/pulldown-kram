@@ -2,8 +2,8 @@
 
 use pulldown_cmark::CowStr;
 
-/// The id, classes and other attributes kramdown's attribute lists give an
-/// element.
+/// The id, classes and other attributes that kramdown's attribute lists
+/// assign to an element.
 ///
 /// ```
 /// use pulldown_kram::{Document, Extensions};
@@ -18,28 +18,29 @@ use pulldown_cmark::CowStr;
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attributes<'a> {
-    /// The id from `#intro` or `id="intro"`, the last one given.
+    /// The id, from `#intro` or `id="intro"`. If several are given, the last
+    /// one wins.
     pub id: Option<CowStr<'a>>,
-    /// The classes from `.new` or `class="new"`, in the order given. As in
-    /// kramdown, `class="…"` replaces the classes before it in its list.
+    /// The classes, from `.new` or `class="new"`, in order. As in kramdown,
+    /// `class="…"` replaces any classes before it in the same list.
     pub classes: Vec<CowStr<'a>>,
-    /// Every other attribute, like `hreflang="de"`, in the order given.
+    /// All other attributes, like `hreflang="de"`, in order.
     pub pairs: Vec<(CowStr<'a>, CowStr<'a>)>,
 }
 
 impl<'a> Attributes<'a> {
-    /// Whether there are no attributes at all.
+    /// Returns `true` if there's no id, class or other attribute.
     pub fn is_empty(&self) -> bool {
         self.id.is_none() && self.classes.is_empty() && self.pairs.is_empty()
     }
 
-    /// Whether `class` is one of the classes.
+    /// Returns `true` if `class` is one of the classes.
     pub fn has_class(&self, class: &str) -> bool {
         self.classes.iter().any(|c| c.as_ref() == class)
     }
 
-    /// These attributes with everything they borrow from the document
-    /// copied, so they can outlive it.
+    /// Converts these attributes into owned ones, which can outlive the
+    /// document they were borrowed from.
     ///
     /// ```
     /// use pulldown_kram::{Attributes, Document, Extensions};
