@@ -1,0 +1,343 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/options.rs`."><title>options.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c87338a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="pulldown_kram" data-themes="" data-resource-suffix="" data-rustdoc-version="1.99.1 (58cf8f9c3 2026-10-13)" data-channel="1.99.1" data-search-js="search-cf4fc35e.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">pulldown_kram/</div>options.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! What to read: which of kramdown's extensions, and any more of
+<a href=#2 id=2 data-nosnippet>2</a>//! pulldown-cmark's options.
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span>bitflags::bitflags;
+<a href=#5 id=5 data-nosnippet>5</a>
+<a href=#6 id=6 data-nosnippet>6</a><span class="doccomment">/// Parsing options for a [`Document`](crate::Document): which kramdown
+<a href=#7 id=7 data-nosnippet>7</a>/// extensions to enable, plus any extra pulldown-cmark options.
+<a href=#8 id=8 data-nosnippet>8</a>///
+<a href=#9 id=9 data-nosnippet>9</a>/// Each part of kramdown's syntax has an [`Extensions`] flag, so
+<a href=#10 id=10 data-nosnippet>10</a>/// [`Extensions::all()`] matches kramdown, and converts into [`Options`]
+<a href=#11 id=11 data-nosnippet>11</a>/// with no extra pulldown-cmark options. Some extensions, like tables, are
+<a href=#12 id=12 data-nosnippet>12</a>/// implemented by pulldown-cmark and turn on its matching option. Those
+<a href=#13 id=13 data-nosnippet>13</a>/// options are controlled by their extension alone, and are on exactly when
+<a href=#14 id=14 data-nosnippet>14</a>/// it is, regardless of [`cmark`]. Use [`cmark`] for syntax kramdown doesn't
+<a href=#15 id=15 data-nosnippet>15</a>/// have, like GitHub's `&gt; [!NOTE]` blockquotes from [`ENABLE_GFM`].
+<a href=#16 id=16 data-nosnippet>16</a>///
+<a href=#17 id=17 data-nosnippet>17</a>/// [`cmark`] can't turn on [`ENABLE_TABLES`], [`ENABLE_FOOTNOTES`],
+<a href=#18 id=18 data-nosnippet>18</a>/// [`ENABLE_STRIKETHROUGH`], [`ENABLE_TASKLISTS`],
+<a href=#19 id=19 data-nosnippet>19</a>/// [`ENABLE_SMART_PUNCTUATION`], [`ENABLE_DEFINITION_LIST`] or
+<a href=#20 id=20 data-nosnippet>20</a>/// [`ENABLE_MATH`], which are controlled by the extensions, or
+<a href=#21 id=21 data-nosnippet>21</a>/// [`ENABLE_HEADING_ATTRIBUTES`], which parses `{…}` after a heading
+<a href=#22 id=22 data-nosnippet>22</a>/// differently from kramdown. [`ENABLE_OLD_FOOTNOTES`] only has an effect
+<a href=#23 id=23 data-nosnippet>23</a>/// with [`Extensions::ENABLE_FOOTNOTES`].
+<a href=#24 id=24 data-nosnippet>24</a>///
+<a href=#25 id=25 data-nosnippet>25</a>/// [`cmark`]: Self::cmark
+<a href=#26 id=26 data-nosnippet>26</a>/// [`ENABLE_GFM`]: pulldown_cmark::Options::ENABLE_GFM
+<a href=#27 id=27 data-nosnippet>27</a>/// [`ENABLE_TABLES`]: pulldown_cmark::Options::ENABLE_TABLES
+<a href=#28 id=28 data-nosnippet>28</a>/// [`ENABLE_FOOTNOTES`]: pulldown_cmark::Options::ENABLE_FOOTNOTES
+<a href=#29 id=29 data-nosnippet>29</a>/// [`ENABLE_STRIKETHROUGH`]: pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+<a href=#30 id=30 data-nosnippet>30</a>/// [`ENABLE_TASKLISTS`]: pulldown_cmark::Options::ENABLE_TASKLISTS
+<a href=#31 id=31 data-nosnippet>31</a>/// [`ENABLE_SMART_PUNCTUATION`]: pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION
+<a href=#32 id=32 data-nosnippet>32</a>/// [`ENABLE_DEFINITION_LIST`]: pulldown_cmark::Options::ENABLE_DEFINITION_LIST
+<a href=#33 id=33 data-nosnippet>33</a>/// [`ENABLE_MATH`]: pulldown_cmark::Options::ENABLE_MATH
+<a href=#34 id=34 data-nosnippet>34</a>/// [`ENABLE_HEADING_ATTRIBUTES`]: pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES
+<a href=#35 id=35 data-nosnippet>35</a>/// [`ENABLE_OLD_FOOTNOTES`]: pulldown_cmark::Options::ENABLE_OLD_FOOTNOTES
+<a href=#36 id=36 data-nosnippet>36</a>///
+<a href=#37 id=37 data-nosnippet>37</a>/// ```
+<a href=#38 id=38 data-nosnippet>38</a>/// use pulldown_kram::{Document, Extensions, Options};
+<a href=#39 id=39 data-nosnippet>39</a>/// use pulldown_kram::pulldown_cmark::Options as Cmark;
+<a href=#40 id=40 data-nosnippet>40</a>///
+<a href=#41 id=41 data-nosnippet>41</a>/// // Plain kramdown.
+<a href=#42 id=42 data-nosnippet>42</a>/// let kramdown = Document::new("a | b\n-|-\n", Extensions::all());
+<a href=#43 id=43 data-nosnippet>43</a>///
+<a href=#44 id=44 data-nosnippet>44</a>/// // Plus GitHub's `&gt; [!NOTE]` blockquotes.
+<a href=#45 id=45 data-nosnippet>45</a>/// let more = Options::new(Extensions::all(), Cmark::ENABLE_GFM);
+<a href=#46 id=46 data-nosnippet>46</a>/// let document = Document::new("&gt; [!NOTE]\n&gt; a\n", more);
+<a href=#47 id=47 data-nosnippet>47</a>/// ```
+<a href=#48 id=48 data-nosnippet>48</a></span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+<a href=#49 id=49 data-nosnippet>49</a></span><span class="kw">pub struct </span>Options {
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="doccomment">/// The kramdown extensions to enable.
+<a href=#51 id=51 data-nosnippet>51</a>    </span><span class="kw">pub </span>kramdown: Extensions,
+<a href=#52 id=52 data-nosnippet>52</a>    <span class="doccomment">/// Extra pulldown-cmark options, for syntax kramdown doesn't have.
+<a href=#53 id=53 data-nosnippet>53</a>    /// Options that belong to an extension are ignored.
+<a href=#54 id=54 data-nosnippet>54</a>    </span><span class="kw">pub </span>cmark: pulldown_cmark::Options,
+<a href=#55 id=55 data-nosnippet>55</a>}
+<a href=#56 id=56 data-nosnippet>56</a>
+<a href=#57 id=57 data-nosnippet>57</a><span class="kw">impl </span>Options {
+<a href=#58 id=58 data-nosnippet>58</a>    <span class="doccomment">/// Creates options from kramdown extensions and extra pulldown-cmark
+<a href=#59 id=59 data-nosnippet>59</a>    /// options.
+<a href=#60 id=60 data-nosnippet>60</a>    </span><span class="kw">pub fn </span>new(kramdown: Extensions, cmark: pulldown_cmark::Options) -&gt; <span class="self">Self </span>{
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="self">Self </span>{ kramdown, cmark }
+<a href=#62 id=62 data-nosnippet>62</a>    }
+<a href=#63 id=63 data-nosnippet>63</a>
+<a href=#64 id=64 data-nosnippet>64</a>    <span class="doccomment">/// The options pulldown-cmark reads with: those the extensions need,
+<a href=#65 id=65 data-nosnippet>65</a>    /// and the rest of `cmark`.
+<a href=#66 id=66 data-nosnippet>66</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>parser_options(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; pulldown_cmark::Options {
+<a href=#67 id=67 data-nosnippet>67</a>        <span class="kw">let </span>read =
+<a href=#68 id=68 data-nosnippet>68</a>            Extensions::all().cmark_options() | pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES;
+<a href=#69 id=69 data-nosnippet>69</a>        (<span class="self">self</span>.cmark - read) | <span class="self">self</span>.kramdown.cmark_options()
+<a href=#70 id=70 data-nosnippet>70</a>    }
+<a href=#71 id=71 data-nosnippet>71</a>}
+<a href=#72 id=72 data-nosnippet>72</a>
+<a href=#73 id=73 data-nosnippet>73</a><span class="kw">impl </span>From&lt;Extensions&gt; <span class="kw">for </span>Options {
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="doccomment">/// Enables the `kramdown` extensions, with no extra pulldown-cmark
+<a href=#75 id=75 data-nosnippet>75</a>    /// options.
+<a href=#76 id=76 data-nosnippet>76</a>    </span><span class="kw">fn </span>from(kramdown: Extensions) -&gt; <span class="self">Self </span>{
+<a href=#77 id=77 data-nosnippet>77</a>        <span class="self">Self </span>{
+<a href=#78 id=78 data-nosnippet>78</a>            kramdown,
+<a href=#79 id=79 data-nosnippet>79</a>            cmark: pulldown_cmark::Options::empty(),
+<a href=#80 id=80 data-nosnippet>80</a>        }
+<a href=#81 id=81 data-nosnippet>81</a>    }
+<a href=#82 id=82 data-nosnippet>82</a>}
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a><span class="kw">impl </span>Default <span class="kw">for </span>Options {
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="doccomment">/// Every extension, matching kramdown, with no extra pulldown-cmark
+<a href=#86 id=86 data-nosnippet>86</a>    /// options.
+<a href=#87 id=87 data-nosnippet>87</a>    </span><span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#88 id=88 data-nosnippet>88</a>        <span class="self">Self</span>::from(Extensions::all())
+<a href=#89 id=89 data-nosnippet>89</a>    }
+<a href=#90 id=90 data-nosnippet>90</a>}
+<a href=#91 id=91 data-nosnippet>91</a>
+<a href=#92 id=92 data-nosnippet>92</a><span class="macro">bitflags!</span> {
+<a href=#93 id=93 data-nosnippet>93</a>    <span class="doccomment">/// The parts of kramdown's syntax that go beyond CommonMark, each of
+<a href=#94 id=94 data-nosnippet>94</a>    /// which can be turned off.
+<a href=#95 id=95 data-nosnippet>95</a>    ///
+<a href=#96 id=96 data-nosnippet>96</a>    /// With every extension on, as in [`Extensions::all()`], documents are
+<a href=#97 id=97 data-nosnippet>97</a>    /// parsed the way kramdown parses them. Some extensions are parsed by
+<a href=#98 id=98 data-nosnippet>98</a>    /// pulldown-cmark itself, and say which of its options they turn on. See
+<a href=#99 id=99 data-nosnippet>99</a>    /// [`Options`] for how those interact with [`Options::cmark`].
+<a href=#100 id=100 data-nosnippet>100</a>    ///
+<a href=#101 id=101 data-nosnippet>101</a>    /// The flags come in groups:
+<a href=#102 id=102 data-nosnippet>102</a>    ///
+<a href=#103 id=103 data-nosnippet>103</a>    /// - Syntax pulldown-cmark also reads, from tables to math, which turn
+<a href=#104 id=104 data-nosnippet>104</a>    ///   on its option for it.
+<a href=#105 id=105 data-nosnippet>105</a>    /// - Attribute lists, and the ids and classes that come from them.
+<a href=#106 id=106 data-nosnippet>106</a>    /// - kramdown's own block and span syntax.
+<a href=#107 id=107 data-nosnippet>107</a>    /// - Where kramdown reads CommonMark's syntax differently.
+<a href=#108 id=108 data-nosnippet>108</a>    ///
+<a href=#109 id=109 data-nosnippet>109</a>    /// [`ENABLE_TABLES_OF_CONTENTS`](Self::ENABLE_TABLES_OF_CONTENTS) makes
+<a href=#110 id=110 data-nosnippet>110</a>    /// [`Document::events`](crate::Document::events) collect every event
+<a href=#111 id=111 data-nosnippet>111</a>    /// before returning the first, since a table can link to headings after
+<a href=#112 id=112 data-nosnippet>112</a>    /// it. [`Extensions::streamable()`] leaves it out, so events are returned
+<a href=#113 id=113 data-nosnippet>113</a>    /// a block at a time. Any other extension can be turned off by removing
+<a href=#114 id=114 data-nosnippet>114</a>    /// it from [`Extensions::all()`]:
+<a href=#115 id=115 data-nosnippet>115</a>    ///
+<a href=#116 id=116 data-nosnippet>116</a>    /// ```
+<a href=#117 id=117 data-nosnippet>117</a>    /// use pulldown_kram::{Document, Extensions, pulldown_cmark::Event};
+<a href=#118 id=118 data-nosnippet>118</a>    ///
+<a href=#119 id=119 data-nosnippet>119</a>    /// // Everything except typography, so quotes stay straight.
+<a href=#120 id=120 data-nosnippet>120</a>    /// let extensions = Extensions::all() - Extensions::ENABLE_TYPOGRAPHY;
+<a href=#121 id=121 data-nosnippet>121</a>    /// let document = Document::new("\"a\"\n", extensions);
+<a href=#122 id=122 data-nosnippet>122</a>    /// let text: Vec&lt;_&gt; = document
+<a href=#123 id=123 data-nosnippet>123</a>    ///     .events()
+<a href=#124 id=124 data-nosnippet>124</a>    ///     .filter_map(|(event, _)| match event {
+<a href=#125 id=125 data-nosnippet>125</a>    ///         Event::Text(text) =&gt; Some(text),
+<a href=#126 id=126 data-nosnippet>126</a>    ///         _ =&gt; None,
+<a href=#127 id=127 data-nosnippet>127</a>    ///     })
+<a href=#128 id=128 data-nosnippet>128</a>    ///     .collect();
+<a href=#129 id=129 data-nosnippet>129</a>    /// assert_eq!(text, ["\"a\"".into()]);
+<a href=#130 id=130 data-nosnippet>130</a>    /// ```
+<a href=#131 id=131 data-nosnippet>131</a>    </span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+<a href=#132 id=132 data-nosnippet>132</a>    </span><span class="kw">pub struct </span>Extensions: u32 {
+<a href=#133 id=133 data-nosnippet>133</a>        <span class="comment">// Syntax pulldown-cmark also reads.
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>        </span><span class="doccomment">/// Tables with a header row. Turns on pulldown-cmark's
+<a href=#136 id=136 data-nosnippet>136</a>        /// `ENABLE_TABLES`.
+<a href=#137 id=137 data-nosnippet>137</a>        </span><span class="kw">const </span>ENABLE_TABLES = <span class="number">1 </span>&lt;&lt; <span class="number">0</span>;
+<a href=#138 id=138 data-nosnippet>138</a>        <span class="doccomment">/// Footnotes, `[^1]`, with block content in their definitions. Turns
+<a href=#139 id=139 data-nosnippet>139</a>        /// on pulldown-cmark's `ENABLE_FOOTNOTES`.
+<a href=#140 id=140 data-nosnippet>140</a>        </span><span class="kw">const </span>ENABLE_FOOTNOTES = <span class="number">1 </span>&lt;&lt; <span class="number">1</span>;
+<a href=#141 id=141 data-nosnippet>141</a>        <span class="doccomment">/// `~~Strikethrough~~`, from kramdown's GFM parser. Turns on
+<a href=#142 id=142 data-nosnippet>142</a>        /// pulldown-cmark's `ENABLE_STRIKETHROUGH`.
+<a href=#143 id=143 data-nosnippet>143</a>        </span><span class="kw">const </span>ENABLE_STRIKETHROUGH = <span class="number">1 </span>&lt;&lt; <span class="number">2</span>;
+<a href=#144 id=144 data-nosnippet>144</a>        <span class="doccomment">/// Task list items, `* [x] done`, from kramdown's GFM parser, with
+<a href=#145 id=145 data-nosnippet>145</a>        /// its classes: `task-list` on the list, and `task-list-item` on
+<a href=#146 id=146 data-nosnippet>146</a>        /// each item from the first task onward. Turns on pulldown-cmark's
+<a href=#147 id=147 data-nosnippet>147</a>        /// `ENABLE_TASKLISTS`.
+<a href=#148 id=148 data-nosnippet>148</a>        </span><span class="kw">const </span>ENABLE_TASK_LISTS = <span class="number">1 </span>&lt;&lt; <span class="number">3</span>;
+<a href=#149 id=149 data-nosnippet>149</a>        <span class="doccomment">/// Dashes, ellipses and smart quotes. As in kramdown, header ids
+<a href=#150 id=150 data-nosnippet>150</a>        /// leave these characters out, so ids only match kramdown's with this
+<a href=#151 id=151 data-nosnippet>151</a>        /// on. Turns on pulldown-cmark's `ENABLE_SMART_PUNCTUATION`.
+<a href=#152 id=152 data-nosnippet>152</a>        </span><span class="kw">const </span>ENABLE_TYPOGRAPHY = <span class="number">1 </span>&lt;&lt; <span class="number">4</span>;
+<a href=#153 id=153 data-nosnippet>153</a>        <span class="doccomment">/// Definition lists: a term followed by `: definition` lines. Turns
+<a href=#154 id=154 data-nosnippet>154</a>        /// on pulldown-cmark's `ENABLE_DEFINITION_LIST`.
+<a href=#155 id=155 data-nosnippet>155</a>        </span><span class="kw">const </span>ENABLE_DEFINITION_LISTS = <span class="number">1 </span>&lt;&lt; <span class="number">5</span>;
+<a href=#156 id=156 data-nosnippet>156</a>        <span class="doccomment">/// Math between `$$`: a block when it's alone in its paragraph,
+<a href=#157 id=157 data-nosnippet>157</a>        /// inline otherwise. As in kramdown, a single `$` is plain text.
+<a href=#158 id=158 data-nosnippet>158</a>        /// Turns on pulldown-cmark's `ENABLE_MATH`.
+<a href=#159 id=159 data-nosnippet>159</a>        </span><span class="kw">const </span>ENABLE_MATH = <span class="number">1 </span>&lt;&lt; <span class="number">6</span>;
+<a href=#160 id=160 data-nosnippet>160</a>
+<a href=#161 id=161 data-nosnippet>161</a>        <span class="comment">// Attribute lists, and what comes from them.
+<a href=#162 id=162 data-nosnippet>162</a>
+<a href=#163 id=163 data-nosnippet>163</a>        </span><span class="doccomment">/// Block attribute lists, like `{:.note}` on the line after a
+<a href=#164 id=164 data-nosnippet>164</a>        /// paragraph, or alone between blocks to apply to the next one.
+<a href=#165 id=165 data-nosnippet>165</a>        </span><span class="kw">const </span>ENABLE_BLOCK_ATTRIBUTES = <span class="number">1 </span>&lt;&lt; <span class="number">7</span>;
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="doccomment">/// Span attribute lists directly after a span, like `*a*{:.x}`, and
+<a href=#167 id=167 data-nosnippet>167</a>        /// the empty list, `{::}`, as a separator between spans.
+<a href=#168 id=168 data-nosnippet>168</a>        </span><span class="kw">const </span>ENABLE_SPAN_ATTRIBUTES = <span class="number">1 </span>&lt;&lt; <span class="number">8</span>;
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="doccomment">/// Attribute lists at the start of a list item, like `* {:.x} a`.
+<a href=#170 id=170 data-nosnippet>170</a>        </span><span class="kw">const </span>ENABLE_ITEM_ATTRIBUTES = <span class="number">1 </span>&lt;&lt; <span class="number">9</span>;
+<a href=#171 id=171 data-nosnippet>171</a>        <span class="doccomment">/// Header ids after a heading's text, `# Hello {#hi}`.
+<a href=#172 id=172 data-nosnippet>172</a>        </span><span class="kw">const </span>ENABLE_HEADER_IDS = <span class="number">1 </span>&lt;&lt; <span class="number">10</span>;
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="doccomment">/// Automatic ids for headings without one, generated the same way as
+<a href=#174 id=174 data-nosnippet>174</a>        /// kramdown's GFM parser. kramdown's `auto_ids` option.
+<a href=#175 id=175 data-nosnippet>175</a>        </span><span class="kw">const </span>ENABLE_AUTO_IDS = <span class="number">1 </span>&lt;&lt; <span class="number">11</span>;
+<a href=#176 id=176 data-nosnippet>176</a>        <span class="doccomment">/// A code block's language from a `language-` class, like
+<a href=#177 id=177 data-nosnippet>177</a>        /// `{: .language-ruby}`, when its fence doesn't give one. The class
+<a href=#178 id=178 data-nosnippet>178</a>        /// comes from a block attribute list, so this needs
+<a href=#179 id=179 data-nosnippet>179</a>        /// `ENABLE_BLOCK_ATTRIBUTES`.
+<a href=#180 id=180 data-nosnippet>180</a>        </span><span class="kw">const </span>ENABLE_LANGUAGE_CLASSES = <span class="number">1 </span>&lt;&lt; <span class="number">12</span>;
+<a href=#181 id=181 data-nosnippet>181</a>        <span class="doccomment">/// Lists marked `{:toc}` turned into tables of contents, linking to
+<a href=#182 id=182 data-nosnippet>182</a>        /// every heading that has an id and doesn't have the class `no_toc`.
+<a href=#183 id=183 data-nosnippet>183</a>        /// The marker is a block attribute list, so this needs
+<a href=#184 id=184 data-nosnippet>184</a>        /// `ENABLE_BLOCK_ATTRIBUTES`.
+<a href=#185 id=185 data-nosnippet>185</a>        ///
+<a href=#186 id=186 data-nosnippet>186</a>        /// Every event is collected before the first is returned,
+<a href=#187 id=187 data-nosnippet>187</a>        /// so tables can link to headings after them. Each table lists every
+<a href=#188 id=188 data-nosnippet>188</a>        /// heading, so output could grow with the square of the document's
+<a href=#189 id=189 data-nosnippet>189</a>        /// size. To bound it, tables of contents produce at most 100,000
+<a href=#190 id=190 data-nosnippet>190</a>        /// events or as many as the document has, whichever is larger; marked
+<a href=#191 id=191 data-nosnippet>191</a>        /// lists past that limit are left as written.
+<a href=#192 id=192 data-nosnippet>192</a>        </span><span class="kw">const </span>ENABLE_TABLES_OF_CONTENTS = <span class="number">1 </span>&lt;&lt; <span class="number">13</span>;
+<a href=#193 id=193 data-nosnippet>193</a>
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="comment">// kramdown's own syntax.
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a>        </span><span class="doccomment">/// The end-of-block marker, a line with only `^`, closing the blocks
+<a href=#197 id=197 data-nosnippet>197</a>        /// open at that point, like a list or a code block. It produces no
+<a href=#198 id=198 data-nosnippet>198</a>        /// events.
+<a href=#199 id=199 data-nosnippet>199</a>        </span><span class="kw">const </span>ENABLE_END_OF_BLOCK_MARKERS = <span class="number">1 </span>&lt;&lt; <span class="number">14</span>;
+<a href=#200 id=200 data-nosnippet>200</a>        <span class="doccomment">/// Hard line breaks with two backslashes at the end of a line, as
+<a href=#201 id=201 data-nosnippet>201</a>        /// well as with two spaces.
+<a href=#202 id=202 data-nosnippet>202</a>        </span><span class="kw">const </span>ENABLE_BACKSLASH_LINE_BREAKS = <span class="number">1 </span>&lt;&lt; <span class="number">15</span>;
+<a href=#203 id=203 data-nosnippet>203</a>        <span class="doccomment">/// Tables without a header row, like a lone `| a | b |` line, and a
+<a href=#204 id=204 data-nosnippet>204</a>        /// `|` in code in a table cell kept in that cell instead of starting
+<a href=#205 id=205 data-nosnippet>205</a>        /// a new one. Also accepts a separator line with fewer cells than
+<a href=#206 id=206 data-nosnippet>206</a>        /// the header, or `+` between its cells. pulldown-cmark parses the
+<a href=#207 id=207 data-nosnippet>207</a>        /// tables, so this needs `ENABLE_TABLES`.
+<a href=#208 id=208 data-nosnippet>208</a>        </span><span class="kw">const </span>ENABLE_TABLES_WITHOUT_HEADERS = <span class="number">1 </span>&lt;&lt; <span class="number">16</span>;
+<a href=#209 id=209 data-nosnippet>209</a>        <span class="doccomment">/// Abbreviations, `*[HTML]: HyperText Markup Language`. Each use in
+<a href=#210 id=210 data-nosnippet>210</a>        /// the text becomes an `&lt;abbr&gt;` with its title.
+<a href=#211 id=211 data-nosnippet>211</a>        </span><span class="kw">const </span>ENABLE_ABBREVIATIONS = <span class="number">1 </span>&lt;&lt; <span class="number">17</span>;
+<a href=#212 id=212 data-nosnippet>212</a>        <span class="doccomment">/// Markdown inside HTML elements marked `markdown="1"`. The
+<a href=#213 id=213 data-nosnippet>213</a>        /// attribute is removed from the HTML.
+<a href=#214 id=214 data-nosnippet>214</a>        </span><span class="kw">const </span>ENABLE_MARKDOWN_ATTRIBUTE = <span class="number">1 </span>&lt;&lt; <span class="number">18</span>;
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="doccomment">/// kramdown's `comment` extension, `{::comment}…{:/}`, as a block or
+<a href=#216 id=216 data-nosnippet>216</a>        /// span, emitted as an HTML comment.
+<a href=#217 id=217 data-nosnippet>217</a>        </span><span class="kw">const </span>ENABLE_COMMENTS = <span class="number">1 </span>&lt;&lt; <span class="number">19</span>;
+<a href=#218 id=218 data-nosnippet>218</a>        <span class="doccomment">/// kramdown's `nomarkdown` extension, `{::nomarkdown}…{:/}`, as a
+<a href=#219 id=219 data-nosnippet>219</a>        /// block or span, emitted as raw HTML unless its `type` names another
+<a href=#220 id=220 data-nosnippet>220</a>        /// of kramdown's converters, like `latex`.
+<a href=#221 id=221 data-nosnippet>221</a>        </span><span class="kw">const </span>ENABLE_NOMARKDOWN = <span class="number">1 </span>&lt;&lt; <span class="number">20</span>;
+<a href=#222 id=222 data-nosnippet>222</a>
+<a href=#223 id=223 data-nosnippet>223</a>        <span class="comment">// Where kramdown reads CommonMark's syntax differently.
+<a href=#224 id=224 data-nosnippet>224</a>
+<a href=#225 id=225 data-nosnippet>225</a>        </span><span class="doccomment">/// HTML blocks that end at the end tag of the element that opened
+<a href=#226 id=226 data-nosnippet>226</a>        /// them, as in kramdown, with any text after it parsed as Markdown.
+<a href=#227 id=227 data-nosnippet>227</a>        /// CommonMark's HTML blocks run to the next blank line. A blank line
+<a href=#228 id=228 data-nosnippet>228</a>        /// before the end tag still ends the block, as in CommonMark.
+<a href=#229 id=229 data-nosnippet>229</a>        </span><span class="kw">const </span>ENABLE_HTML_BLOCK_ENDS = <span class="number">1 </span>&lt;&lt; <span class="number">21</span>;
+<a href=#230 id=230 data-nosnippet>230</a>        <span class="doccomment">/// A line with only a span-level tag, like `&lt;img&gt;`, starts a
+<a href=#231 id=231 data-nosnippet>231</a>        /// paragraph together with the text on the next line, instead of an
+<a href=#232 id=232 data-nosnippet>232</a>        /// HTML block. Followed by a blank line, it's still an HTML block,
+<a href=#233 id=233 data-nosnippet>233</a>        /// where kramdown makes it a paragraph.
+<a href=#234 id=234 data-nosnippet>234</a>        </span><span class="kw">const </span>ENABLE_SPAN_TAG_PARAGRAPHS = <span class="number">1 </span>&lt;&lt; <span class="number">22</span>;
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="doccomment">/// The text of the HTML spans kramdown leaves raw, like `&lt;kbd&gt;`,
+<a href=#236 id=236 data-nosnippet>236</a>        /// `&lt;code&gt;` and `&lt;var&gt;`, passed through unchanged, without Markdown
+<a href=#237 id=237 data-nosnippet>237</a>        /// or typography applied inside them.
+<a href=#238 id=238 data-nosnippet>238</a>        </span><span class="kw">const </span>ENABLE_RAW_HTML_SPANS = <span class="number">1 </span>&lt;&lt; <span class="number">23</span>;
+<a href=#239 id=239 data-nosnippet>239</a>        <span class="doccomment">/// Tight and loose list items decided per item, as kramdown does,
+<a href=#240 id=240 data-nosnippet>240</a>        /// rather than per list: an item's first paragraph is only wrapped
+<a href=#241 id=241 data-nosnippet>241</a>        /// in a paragraph if a blank line follows it in the item.
+<a href=#242 id=242 data-nosnippet>242</a>        </span><span class="kw">const </span>ENABLE_LIST_ITEM_PARAGRAPHS = <span class="number">1 </span>&lt;&lt; <span class="number">24</span>;
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="doccomment">/// One list for items marked with any mix of `*`, `+` and `-`.
+<a href=#244 id=244 data-nosnippet>244</a>        /// CommonMark starts a new list whenever the marker changes.
+<a href=#245 id=245 data-nosnippet>245</a>        </span><span class="kw">const </span>ENABLE_MIXED_LIST_MARKERS = <span class="number">1 </span>&lt;&lt; <span class="number">25</span>;
+<a href=#246 id=246 data-nosnippet>246</a>        <span class="doccomment">/// Backslash escapes for only the characters kramdown escapes. A
+<a href=#247 id=247 data-nosnippet>247</a>        /// backslash before any other character, like `\&amp;`, is kept, where
+<a href=#248 id=248 data-nosnippet>248</a>        /// CommonMark escapes all ASCII punctuation.
+<a href=#249 id=249 data-nosnippet>249</a>        </span><span class="kw">const </span>ENABLE_KRAMDOWN_ESCAPES = <span class="number">1 </span>&lt;&lt; <span class="number">26</span>;
+<a href=#250 id=250 data-nosnippet>250</a>    }
+<a href=#251 id=251 data-nosnippet>251</a>}
+<a href=#252 id=252 data-nosnippet>252</a>
+<a href=#253 id=253 data-nosnippet>253</a><span class="kw">impl </span>Extensions {
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="doccomment">/// Every extension except
+<a href=#255 id=255 data-nosnippet>255</a>    /// [`ENABLE_TABLES_OF_CONTENTS`](Self::ENABLE_TABLES_OF_CONTENTS), so
+<a href=#256 id=256 data-nosnippet>256</a>    /// [`Document::events`](crate::Document::events) returns events a block at
+<a href=#257 id=257 data-nosnippet>257</a>    /// a time instead of collecting them all first. Lists marked `{:toc}`
+<a href=#258 id=258 data-nosnippet>258</a>    /// stay as written.
+<a href=#259 id=259 data-nosnippet>259</a>    ///
+<a href=#260 id=260 data-nosnippet>260</a>    /// ```
+<a href=#261 id=261 data-nosnippet>261</a>    /// use pulldown_kram::{Document, Extensions};
+<a href=#262 id=262 data-nosnippet>262</a>    ///
+<a href=#263 id=263 data-nosnippet>263</a>    /// let document = Document::new("* x\n{:toc}\n", Extensions::streamable());
+<a href=#264 id=264 data-nosnippet>264</a>    /// assert_eq!(document.events().count(), 5);
+<a href=#265 id=265 data-nosnippet>265</a>    /// ```
+<a href=#266 id=266 data-nosnippet>266</a>    </span><span class="kw">pub const fn </span>streamable() -&gt; <span class="self">Self </span>{
+<a href=#267 id=267 data-nosnippet>267</a>        <span class="self">Self</span>::all().difference(<span class="self">Self</span>::ENABLE_TABLES_OF_CONTENTS)
+<a href=#268 id=268 data-nosnippet>268</a>    }
+<a href=#269 id=269 data-nosnippet>269</a>
+<a href=#270 id=270 data-nosnippet>270</a>    <span class="doccomment">/// The extensions pulldown-cmark reads, and its option for each.
+<a href=#271 id=271 data-nosnippet>271</a>    </span><span class="kw">const </span>CMARK: [(<span class="self">Self</span>, pulldown_cmark::Options); <span class="number">7</span>] = [
+<a href=#272 id=272 data-nosnippet>272</a>        (<span class="self">Self</span>::ENABLE_TABLES, pulldown_cmark::Options::ENABLE_TABLES),
+<a href=#273 id=273 data-nosnippet>273</a>        (
+<a href=#274 id=274 data-nosnippet>274</a>            <span class="self">Self</span>::ENABLE_FOOTNOTES,
+<a href=#275 id=275 data-nosnippet>275</a>            pulldown_cmark::Options::ENABLE_FOOTNOTES,
+<a href=#276 id=276 data-nosnippet>276</a>        ),
+<a href=#277 id=277 data-nosnippet>277</a>        (
+<a href=#278 id=278 data-nosnippet>278</a>            <span class="self">Self</span>::ENABLE_STRIKETHROUGH,
+<a href=#279 id=279 data-nosnippet>279</a>            pulldown_cmark::Options::ENABLE_STRIKETHROUGH,
+<a href=#280 id=280 data-nosnippet>280</a>        ),
+<a href=#281 id=281 data-nosnippet>281</a>        (
+<a href=#282 id=282 data-nosnippet>282</a>            <span class="self">Self</span>::ENABLE_TASK_LISTS,
+<a href=#283 id=283 data-nosnippet>283</a>            pulldown_cmark::Options::ENABLE_TASKLISTS,
+<a href=#284 id=284 data-nosnippet>284</a>        ),
+<a href=#285 id=285 data-nosnippet>285</a>        (
+<a href=#286 id=286 data-nosnippet>286</a>            <span class="self">Self</span>::ENABLE_TYPOGRAPHY,
+<a href=#287 id=287 data-nosnippet>287</a>            pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION,
+<a href=#288 id=288 data-nosnippet>288</a>        ),
+<a href=#289 id=289 data-nosnippet>289</a>        (
+<a href=#290 id=290 data-nosnippet>290</a>            <span class="self">Self</span>::ENABLE_DEFINITION_LISTS,
+<a href=#291 id=291 data-nosnippet>291</a>            pulldown_cmark::Options::ENABLE_DEFINITION_LIST,
+<a href=#292 id=292 data-nosnippet>292</a>        ),
+<a href=#293 id=293 data-nosnippet>293</a>        (<span class="self">Self</span>::ENABLE_MATH, pulldown_cmark::Options::ENABLE_MATH),
+<a href=#294 id=294 data-nosnippet>294</a>    ];
+<a href=#295 id=295 data-nosnippet>295</a>
+<a href=#296 id=296 data-nosnippet>296</a>    <span class="doccomment">/// The pulldown-cmark options these extensions are read with.
+<a href=#297 id=297 data-nosnippet>297</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>cmark_options(<span class="self">self</span>) -&gt; pulldown_cmark::Options {
+<a href=#298 id=298 data-nosnippet>298</a>        <span class="self">Self</span>::CMARK
+<a href=#299 id=299 data-nosnippet>299</a>            .into_iter()
+<a href=#300 id=300 data-nosnippet>300</a>            .filter(|(extension, <span class="kw">_</span>)| <span class="self">self</span>.contains(<span class="kw-2">*</span>extension))
+<a href=#301 id=301 data-nosnippet>301</a>            .fold(pulldown_cmark::Options::empty(), |options, (<span class="kw">_</span>, option)| {
+<a href=#302 id=302 data-nosnippet>302</a>                options | option
+<a href=#303 id=303 data-nosnippet>303</a>            })
+<a href=#304 id=304 data-nosnippet>304</a>    }
+<a href=#305 id=305 data-nosnippet>305</a>
+<a href=#306 id=306 data-nosnippet>306</a>    <span class="doccomment">/// Whether any kind of attribute list is read.
+<a href=#307 id=307 data-nosnippet>307</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>attribute_lists(<span class="self">self</span>) -&gt; bool {
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="self">self</span>.intersects(
+<a href=#309 id=309 data-nosnippet>309</a>            <span class="self">Self</span>::ENABLE_BLOCK_ATTRIBUTES
+<a href=#310 id=310 data-nosnippet>310</a>                | <span class="self">Self</span>::ENABLE_SPAN_ATTRIBUTES
+<a href=#311 id=311 data-nosnippet>311</a>                | <span class="self">Self</span>::ENABLE_ITEM_ATTRIBUTES,
+<a href=#312 id=312 data-nosnippet>312</a>        )
+<a href=#313 id=313 data-nosnippet>313</a>    }
+<a href=#314 id=314 data-nosnippet>314</a>}
+<a href=#315 id=315 data-nosnippet>315</a>
+<a href=#316 id=316 data-nosnippet>316</a><span class="attr">#[cfg(test)]
+<a href=#317 id=317 data-nosnippet>317</a></span><span class="kw">mod </span>tests {
+<a href=#318 id=318 data-nosnippet>318</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#319 id=319 data-nosnippet>319</a>    <span class="kw">use </span>pulldown_cmark::Options <span class="kw">as </span>Cmark;
+<a href=#320 id=320 data-nosnippet>320</a>
+<a href=#321 id=321 data-nosnippet>321</a>    <span class="attr">#[test]
+<a href=#322 id=322 data-nosnippet>322</a>    </span><span class="kw">fn </span>options_parser_options_kramdown_needs_nothing_more() {
+<a href=#323 id=323 data-nosnippet>323</a>        <span class="macro">assert_eq!</span>(
+<a href=#324 id=324 data-nosnippet>324</a>            Options::from(Extensions::all()).parser_options(),
+<a href=#325 id=325 data-nosnippet>325</a>            Cmark::ENABLE_TABLES
+<a href=#326 id=326 data-nosnippet>326</a>                | Cmark::ENABLE_FOOTNOTES
+<a href=#327 id=327 data-nosnippet>327</a>                | Cmark::ENABLE_STRIKETHROUGH
+<a href=#328 id=328 data-nosnippet>328</a>                | Cmark::ENABLE_TASKLISTS
+<a href=#329 id=329 data-nosnippet>329</a>                | Cmark::ENABLE_SMART_PUNCTUATION
+<a href=#330 id=330 data-nosnippet>330</a>                | Cmark::ENABLE_DEFINITION_LIST
+<a href=#331 id=331 data-nosnippet>331</a>                | Cmark::ENABLE_MATH
+<a href=#332 id=332 data-nosnippet>332</a>        );
+<a href=#333 id=333 data-nosnippet>333</a>    }
+<a href=#334 id=334 data-nosnippet>334</a>
+<a href=#335 id=335 data-nosnippet>335</a>    <span class="attr">#[test]
+<a href=#336 id=336 data-nosnippet>336</a>    </span><span class="kw">fn </span>options_parser_options_cmark_adds_only_what_kramdown_lacks() {
+<a href=#337 id=337 data-nosnippet>337</a>        <span class="kw">let </span>options = Options::new(Extensions::empty(), Cmark::all()).parser_options();
+<a href=#338 id=338 data-nosnippet>338</a>        <span class="macro">assert!</span>(!options.intersects(Extensions::all().cmark_options()));
+<a href=#339 id=339 data-nosnippet>339</a>        <span class="macro">assert!</span>(!options.contains(Cmark::ENABLE_HEADING_ATTRIBUTES));
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="macro">assert!</span>(options.contains(Cmark::ENABLE_GFM));
+<a href=#341 id=341 data-nosnippet>341</a>    }
+<a href=#342 id=342 data-nosnippet>342</a>}
+</code></pre></div></section></main></body></html>

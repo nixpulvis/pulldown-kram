@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A kramdown parser built on pulldown-cmark."><title>pulldown_kram - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-0c87338a.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="pulldown_kram" data-themes="" data-resource-suffix="" data-rustdoc-version="1.99.1 (58cf8f9c3 2026-10-13)" data-channel="1.99.1" data-search-js="search-cf4fc35e.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../static.files/storage-41dd4d93.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate pulldown_kram</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../pulldown_kram/index.html">pulldown_<wbr>kram</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#syntax-support" title="Syntax support">Syntax support</a><ul><li><a href="#source-text" title="Source text">Source text</a></li><li><a href="#structural-elements" title="Structural elements">Structural elements</a></li><li><a href="#text-markup" title="Text markup">Text markup</a></li><li><a href="#non-content-elements" title="Non-content elements">Non-content elements</a></li><li><a href="#converter" title="Converter">Converter</a></li></ul></li><li><a href="#how-it-works" title="How it works">How it works</a></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1>Crate <span>pulldown_<wbr>kram</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/pulldown_kram/lib.rs.html#1-870">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A <a href="https://kramdown.gettalong.org">kramdown</a> parser built on <a href="https://docs.rs/pulldown-cmark">pulldown-cmark</a>.</p>
+<p>kramdown is a Markdown dialect (like GFM) which <a href="https://jekyllrb.com">Jekyll</a> uses by default,
+and supports many extensions which are <a href="#syntax-support">listed below</a>.
+This crate parses it into [<code>pulldown_cmark::Event</code>]s, pairing each event
+with the <a href="struct.Attributes.html" title="struct pulldown_kram::Attributes"><code>Attributes</code></a> that kramdown attribute lists such as
+<code>{: .note #intro}</code> assign to it.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>pulldown_kram::{Document, Extensions, pulldown_cmark::{Event, Tag}};
+
+<span class="kw">let </span>document = Document::new(<span class="string">"# Intro\n\nSee `x`{:.new}.\n"</span>, Extensions::all());
+<span class="kw">let </span>events: Vec&lt;<span class="kw">_</span>&gt; = document.events().collect();
+
+<span class="comment">// `# Intro` gets the id `intro`, as in kramdown.
+</span><span class="macro">assert!</span>(<span class="macro">matches!</span>(
+    <span class="kw-2">&amp;</span>events[<span class="number">0</span>].<span class="number">0</span>,
+    Event::Start(Tag::Heading { id: <span class="prelude-val">Some</span>(id), .. }) <span class="kw">if </span>id.as_ref() == <span class="string">"intro"
+</span>));
+
+<span class="comment">// `{:.new}` gives the code span before it the class `new`.
+</span><span class="kw">let </span>(<span class="kw">_</span>, attributes) = events
+    .iter()
+    .find(|(event, <span class="kw">_</span>)| <span class="macro">matches!</span>(event, Event::Code(<span class="kw">_</span>)))
+    .unwrap();
+<span class="macro">assert!</span>(attributes.has_class(<span class="string">"new"</span>));</code></pre></div>
+<p><a href="html/fn.push_html.html" title="fn pulldown_kram::html::push_html"><code>html::push_html</code></a> renders the events as HTML the way kramdown does,
+attributes included. The <a href="html/index.html" title="mod pulldown_kram::html"><code>html</code></a> module mirrors
+<a href="https://docs.rs/pulldown-cmark/0.13/pulldown_cmark/html/index.html"><code>pulldown_cmark::html</code></a>.</p>
+<h2 id="syntax-support"><a class="doc-anchor" href="#syntax-support">§</a>Syntax support</h2>
+<p>What’s supported from <a href="https://kramdown.gettalong.org/syntax.html">kramdown’s syntax</a>, following the sections of its
+documentation. An item marked ☑ works as it does in kramdown. One marked
+⊟ does apart from the ☐ items after it. One marked ☐ doesn’t, and says
+what happens instead. Items that need one of the <a href="struct.Extensions.html" title="struct pulldown_kram::Extensions"><code>Extensions</code></a> start
+with its name. Each extension can be turned off on its own, and
+<a href="struct.Extensions.html#method.all" title="associated function pulldown_kram::Extensions::all"><code>Extensions::all()</code></a> turns them all on.</p>
+<h3 id="source-text"><a class="doc-anchor" href="#source-text">§</a>Source text</h3>
+<ul>
+<li>⊟ Tab stops every four columns.</li>
+<li>☐ A tab after a blockquote marker counting toward a code block’s
+indent, so <code>&gt; \tcode</code> is a code block. Instead, it’s a paragraph.</li>
+<li>☐ Headers only on a block boundary. kramdown’s GFM parser lets an atx
+header interrupt a paragraph, as here, but a setext underline after a
+paragraph of two or more lines stays text. Instead, the paragraph’s
+lines become the header.</li>
+<li>☐ Lazy lines that start a block, like <code>&gt; a\n# b</code>, kept in the
+blockquote or list item, as kramdown’s GFM parser keeps them. Instead,
+the blockquote or list item ends.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_KRAMDOWN_ESCAPES" title="associated constant pulldown_kram::Extensions::ENABLE_KRAMDOWN_ESCAPES"><code>ENABLE_KRAMDOWN_ESCAPES</code></a>: Backslash escapes, for exactly the
+characters kramdown escapes. A backslash before any other character is
+kept.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_KRAMDOWN_ESCAPES" title="associated constant pulldown_kram::Extensions::ENABLE_KRAMDOWN_ESCAPES"><code>ENABLE_KRAMDOWN_ESCAPES</code></a>: Backslashes in link URLs and titles,
+which kramdown keeps. Instead, they escape there too.</li>
+</ul>
+<h3 id="structural-elements"><a class="doc-anchor" href="#structural-elements">§</a>Structural elements</h3>
+<ul>
+<li>☑ Hard line breaks with two trailing spaces.</li>
+<li>⊟ Paragraphs, including lazy continuation lines.</li>
+<li>☐ A paragraph that a horizontal rule doesn’t interrupt, so
+<code>para\n***</code> stays one paragraph. Instead, the rule ends it.</li>
+<li>☐ An ordered list interrupting a paragraph whatever its first number,
+like <code>para\n2. two</code>. Instead, it’s text.</li>
+<li>⊟ Setext and atx headers, including the <code>header\n---</code> edge case.</li>
+<li>☐ Headers only in the first column, so <code> # a</code>, or an underline
+indented by a space, stays text. Instead, they make headers.</li>
+<li>☐ Empty atx headers, like <code>#</code>, kept as text. Instead, they’re empty
+headings.</li>
+<li>⊟ Blockquotes, including nested and lazy ones.</li>
+<li>⊟ Indented code blocks, continuing across blank lines.</li>
+<li>☐ Lazy continuation lines in an indented code block. Instead, they
+end the code block and start a paragraph.</li>
+<li>⊟ Fenced code blocks with <code>~~~</code>, with an optional language after the
+fence.</li>
+<li>☐ Words after a fence’s language making the lines a paragraph.
+Instead, they’re a code block.</li>
+<li>☐ An unclosed fence read as a paragraph. Instead, the code block runs
+to the end of the document.</li>
+<li>☐ A fence indented by one to three spaces keeping that indent on its
+lines. Instead, it’s stripped.</li>
+<li>⊟ Ordered and unordered lists, nested or compact, and <code>1984\.</code> to
+escape a list marker.</li>
+<li>☐ A list item with nothing on its first line and a code block after
+it. Instead, the code keeps two more spaces of indent.</li>
+<li>☐ A list item’s text starting wherever it starts after the marker, so
+<code>*       text</code> is text. Instead, five or more spaces start a code
+block, as in CommonMark.</li>
+<li>☐ <code>1)</code> read as text. Instead, it’s an ordered list marker.</li>
+<li>☐ An ordered item right after an unordered one nested in it.
+Instead, it starts a new list.</li>
+<li>☐ An unindented fenced code block on the line right after a list
+item’s text, which kramdown keeps in the item as a lazy line, with the
+item’s indent removed from its lines. Instead, it ends the list.</li>
+<li>☐ Keeping the extra indent of a fenced code block indented past a
+list item’s content. Instead, the indent is stripped from its lines.</li>
+<li>☐ Ordered lists always numbered from 1. Instead, the first number is
+kept.</li>
+<li>⊟ Horizontal rules.</li>
+<li>☐ <code>* * *</code> right after a list item read as a nested item. Instead,
+it’s a rule.</li>
+<li>☐ HTML rewritten as kramdown writes it: tag and attribute names
+lowercased, unclosed tags closed, and stray end tags made text.
+Instead, it’s passed through as pulldown-cmark HTML events, for the
+program reading them to handle.</li>
+<li>☐ The <code>parse_block_html</code> option. Instead, HTML blocks are read as
+with it off, kramdown’s default.</li>
+<li>☐ Any tag that isn’t span-level starting an HTML block, even on a
+paragraph’s next line. Instead, an unknown tag stays in the paragraph.</li>
+<li>☐ Processing instructions and CDATA sections written as kramdown
+writes them. Instead, they’re kept as HTML.</li>
+<li>☐ XML-namespaced tags, like <code>&lt;x:y&gt;</code>, read as HTML. Instead, they’re
+text.</li>
+<li>☑ <a href="struct.Extensions.html#associatedconstant.ENABLE_BACKSLASH_LINE_BREAKS" title="associated constant pulldown_kram::Extensions::ENABLE_BACKSLASH_LINE_BREAKS"><code>ENABLE_BACKSLASH_LINE_BREAKS</code></a>: Hard line breaks with two
+trailing backslashes.</li>
+<li>☑ <a href="struct.Extensions.html#associatedconstant.ENABLE_LANGUAGE_CLASSES" title="associated constant pulldown_kram::Extensions::ENABLE_LANGUAGE_CLASSES"><code>ENABLE_LANGUAGE_CLASSES</code></a>: A code block’s language from an
+attribute list, <code>{: .language-ruby}</code>, when the fence doesn’t give one.</li>
+<li>☑ <a href="struct.Extensions.html#associatedconstant.ENABLE_MIXED_LIST_MARKERS" title="associated constant pulldown_kram::Extensions::ENABLE_MIXED_LIST_MARKERS"><code>ENABLE_MIXED_LIST_MARKERS</code></a>: Mixing <code>*</code>, <code>+</code> and <code>-</code> in one list.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_HEADER_IDS" title="associated constant pulldown_kram::Extensions::ENABLE_HEADER_IDS"><code>ENABLE_HEADER_IDS</code></a>: Header ids, <code># Hello {#id}</code>. As in kramdown,
+<code># Hello {: #id}</code> is left as text.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_HEADER_IDS" title="associated constant pulldown_kram::Extensions::ENABLE_HEADER_IDS"><code>ENABLE_HEADER_IDS</code></a>: Every id kramdown accepts, any XML name like
+<code>{#a.b}</code> or <code>{#_x}</code>. Instead, those are left as text.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_HEADER_IDS" title="associated constant pulldown_kram::Extensions::ENABLE_HEADER_IDS"><code>ENABLE_HEADER_IDS</code></a>: An id before an atx header’s closing hashes,
+<code># A {#a} ##</code>, left as text. Instead, it’s the header’s id.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_LIST_ITEM_PARAGRAPHS" title="associated constant pulldown_kram::Extensions::ENABLE_LIST_ITEM_PARAGRAPHS"><code>ENABLE_LIST_ITEM_PARAGRAPHS</code></a>: Tight and loose list items decided
+per item, not per list: an item’s first paragraph isn’t wrapped in a
+paragraph unless a blank line follows it.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_LIST_ITEM_PARAGRAPHS" title="associated constant pulldown_kram::Extensions::ENABLE_LIST_ITEM_PARAGRAPHS"><code>ENABLE_LIST_ITEM_PARAGRAPHS</code></a>: An end-of-block marker after a
+list wrapping its last item in a paragraph. Instead, the item stays
+tight.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_TASK_LISTS" title="associated constant pulldown_kram::Extensions::ENABLE_TASK_LISTS"><code>ENABLE_TASK_LISTS</code></a>: Task list items, <code>* [x] done</code>, from
+kramdown’s GFM parser.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TASK_LISTS" title="associated constant pulldown_kram::Extensions::ENABLE_TASK_LISTS"><code>ENABLE_TASK_LISTS</code></a>: Task items as kramdown’s GFM parser reads
+them: an empty <code>[ ]</code> is text, and <code>* {:.c} [x] a</code> is a task. Instead,
+the empty box is a task, and the box after an attribute list is text.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_DEFINITION_LISTS" title="associated constant pulldown_kram::Extensions::ENABLE_DEFINITION_LISTS"><code>ENABLE_DEFINITION_LISTS</code></a>: Definition lists, one term per line. A
+definition’s first paragraph isn’t wrapped in a paragraph unless a
+blank line comes before it. At most one blank line may separate the
+terms from their first definition, any number may separate
+definitions, and a definition with an empty first line is indented by
+four spaces.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_DEFINITION_LISTS" title="associated constant pulldown_kram::Extensions::ENABLE_DEFINITION_LISTS"><code>ENABLE_DEFINITION_LISTS</code></a>: Separate terms on lines joined by one
+span, like <code>*a\nb*</code>. Instead, they form a single term.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_DEFINITION_LISTS" title="associated constant pulldown_kram::Extensions::ENABLE_DEFINITION_LISTS"><code>ENABLE_DEFINITION_LISTS</code></a>: A definition’s first line with its
+leading whitespace stripped, so <code>:     text</code> is a paragraph. Instead,
+four or more spaces make it code.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_DEFINITION_LISTS" title="associated constant pulldown_kram::Extensions::ENABLE_DEFINITION_LISTS"><code>ENABLE_DEFINITION_LISTS</code></a>: A space or tab required after the
+<code>:</code>. Instead, <code>term\n:text</code> is a definition list.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: Tables with a header row.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: Several header rows above the separator line.
+Instead, the rows before the last make a paragraph.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: Rows wider than the header, widening the table.
+Instead, the extra cells are dropped.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: A table with a header followed by a line that
+isn’t a row, which makes it all a paragraph. Instead, it’s a table,
+with the line as another row.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: A header and separator line with no rows after
+them read as a paragraph. Instead, they’re a table.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: Separator lines in a table body, and footer
+separator lines, <code>|===</code>. Instead, each is a row of dashes or equals
+signs after a header row. Without one, <code>|===</code> is a header’s separator
+line, and a table with a separator after its first rows is a
+paragraph.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES"><code>ENABLE_TABLES</code></a>: Two or more lines of only table separators,
+which kramdown doesn’t treat as a table. Instead, they’re parsed as
+one.</li>
+<li>☑ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A separator line with fewer
+cells than the header, or <code>+</code> between its cells.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: Tables without a header row.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A <code>|</code> in a code span in a table
+cell, kept in that cell.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A row starting with <code>|</code> after one
+that doesn’t, given an empty first cell. Instead, its cells don’t
+shift.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: Tables without a header row in
+blockquotes, list items and footnotes. Instead, they’re text, with an
+empty table before them.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A <code>\|</code> in a code span in a table
+cell keeping its backslash. Instead, it’s dropped.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A <code>|</code> in HTML <code>&lt;code&gt;</code> in a cell
+kept in that cell. Instead, it starts another cell.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A code span over two lines of a
+table, which makes them a paragraph. Instead, they’re a table.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_WITHOUT_HEADERS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_WITHOUT_HEADERS"><code>ENABLE_TABLES_WITHOUT_HEADERS</code></a>: A line with a <code>|</code> only inside
+inline math read as a table row. Instead, it’s a paragraph.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_MATH" title="associated constant pulldown_kram::Extensions::ENABLE_MATH"><code>ENABLE_MATH</code></a>: Math blocks, <code>$$…$$</code> alone in a paragraph.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MATH" title="associated constant pulldown_kram::Extensions::ENABLE_MATH"><code>ENABLE_MATH</code></a>: Blank lines in a math block. Instead, a blank line
+splits it into paragraphs.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MATH" title="associated constant pulldown_kram::Extensions::ENABLE_MATH"><code>ENABLE_MATH</code></a>: Math blocks only between block boundaries, so <code>$$</code>
+right after or right before a fence or header is inline math in a
+paragraph. Instead, it’s a math block.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MATH" title="associated constant pulldown_kram::Extensions::ENABLE_MATH"><code>ENABLE_MATH</code></a>: <code>$$…$$</code> alone in a list item or definition read
+as a math block. Instead, it’s inline math.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_HTML_BLOCK_ENDS" title="associated constant pulldown_kram::Extensions::ENABLE_HTML_BLOCK_ENDS"><code>ENABLE_HTML_BLOCK_ENDS</code></a>: HTML blocks, with Markdown inside them
+left as HTML. A block ends at the end tag of the element that opened
+it, and text after that is parsed as Markdown, as long as no blank line
+comes before the end tag.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_HTML_BLOCK_ENDS" title="associated constant pulldown_kram::Extensions::ENABLE_HTML_BLOCK_ENDS"><code>ENABLE_HTML_BLOCK_ENDS</code></a>: Blank lines inside an HTML block.
+Instead, as in CommonMark, a blank line ends the block, and what
+follows is parsed as Markdown.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_HTML_BLOCK_ENDS" title="associated constant pulldown_kram::Extensions::ENABLE_HTML_BLOCK_ENDS"><code>ENABLE_HTML_BLOCK_ENDS</code></a>: Every element that isn’t span-level,
+like <code>&lt;details&gt;</code> or a custom tag, ending at its end tag. Instead, an
+element outside a fixed list runs to the next blank line.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_HTML_BLOCK_ENDS" title="associated constant pulldown_kram::Extensions::ENABLE_HTML_BLOCK_ENDS"><code>ENABLE_HTML_BLOCK_ENDS</code></a>: An end tag inside a comment or an
+attribute value leaving the block open. Instead, it ends the block
+early.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_HTML_BLOCK_ENDS" title="associated constant pulldown_kram::Extensions::ENABLE_HTML_BLOCK_ENDS"><code>ENABLE_HTML_BLOCK_ENDS</code></a>: HTML blocks in a blockquote ending at
+their end tag. Instead, they run to the next blank line.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_MARKDOWN_ATTRIBUTE" title="associated constant pulldown_kram::Extensions::ENABLE_MARKDOWN_ATTRIBUTE"><code>ENABLE_MARKDOWN_ATTRIBUTE</code></a>: <code>markdown="1"</code> on a block element.
+Its content is parsed as Markdown and the attribute is removed.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MARKDOWN_ATTRIBUTE" title="associated constant pulldown_kram::Extensions::ENABLE_MARKDOWN_ATTRIBUTE"><code>ENABLE_MARKDOWN_ATTRIBUTE</code></a>: <code>markdown="1"</code> on elements whose
+content kramdown reads as spans, like <code>&lt;p&gt;</code> and <code>&lt;h1&gt;</code>. Instead, their
+content is left as HTML.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MARKDOWN_ATTRIBUTE" title="associated constant pulldown_kram::Extensions::ENABLE_MARKDOWN_ATTRIBUTE"><code>ENABLE_MARKDOWN_ATTRIBUTE</code></a>: <code>markdown="1"</code> with text on the start
+tag’s line, or after the end tag. Instead, that text is left as HTML.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MARKDOWN_ATTRIBUTE" title="associated constant pulldown_kram::Extensions::ENABLE_MARKDOWN_ATTRIBUTE"><code>ENABLE_MARKDOWN_ATTRIBUTE</code></a>: <code>markdown='1'</code>, in single quotes.
+Instead, it’s ignored.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MARKDOWN_ATTRIBUTE" title="associated constant pulldown_kram::Extensions::ENABLE_MARKDOWN_ATTRIBUTE"><code>ENABLE_MARKDOWN_ATTRIBUTE</code></a>: <code>markdown="block"</code>,
+<code>markdown="span"</code> and <code>markdown="0"</code>. Instead, the attribute is kept,
+and the content is left as HTML in a block element and parsed as
+Markdown in a span.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_TAG_PARAGRAPHS" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_TAG_PARAGRAPHS"><code>ENABLE_SPAN_TAG_PARAGRAPHS</code></a>: A line with only a span-level tag,
+like <code>&lt;img&gt;</code>, starting a paragraph together with the text on the next
+line.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_TAG_PARAGRAPHS" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_TAG_PARAGRAPHS"><code>ENABLE_SPAN_TAG_PARAGRAPHS</code></a>: A line with only a span-level tag,
+followed by a blank line, as a paragraph of its own. Instead, it’s an
+HTML block.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_TAG_PARAGRAPHS" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_TAG_PARAGRAPHS"><code>ENABLE_SPAN_TAG_PARAGRAPHS</code></a>: Lines in <code>&lt;pre&gt;</code> left as written.
+Instead, a line with only a span-level tag is joined to the next there
+too.</li>
+</ul>
+<h3 id="text-markup"><a class="doc-anchor" href="#text-markup">§</a>Text markup</h3>
+<ul>
+<li>⊟ Automatic links, <code>&lt;http://example.com&gt;</code> and <code>&lt;me@example.com&gt;</code>.</li>
+<li>☐ <code>&lt;mailto:me@example.com&gt;</code> with only the address as the link text.
+Instead, the link text includes <code>mailto:</code>.</li>
+<li>☐ Automatic links with a space in the URL, or a non-ASCII email
+address. Instead, they’re text.</li>
+<li>⊟ Inline links, with single- or double-quoted titles.</li>
+<li>☐ Inline link titles as kramdown reads them: an empty title leaves
+the whole link as text, and a title in parentheses is part of the URL.
+Instead, the first is a link without a title, and the second a title.</li>
+<li>☐ Spaces in an inline link’s URL, <code>[a](b c.html)</code>. Instead, it’s
+parsed as text.</li>
+<li>☐ A link inside link text, <code>[a [b](v) c](u)</code>, left as text in the
+outer link. Instead, the inner one is the link.</li>
+<li>⊟ Reference links, <code>[text][id]</code>, <code>[text][]</code> and <code>[text]</code>, matched
+case-insensitively.</li>
+<li>☐ Spaces or a line break between a reference link’s brackets,
+<code>[text]\n[id]</code>. Instead, each pair of brackets is read on its own.</li>
+<li>☐ Brackets in a reference link’s text, <code>[[1]][1]</code>. Instead, the inner
+brackets form the link and the outer ones are text.</li>
+<li>⊟ Link definitions, and <code>\:</code> to keep one as text.</li>
+<li>☐ The last link definition of a name winning. Instead, the first
+wins.</li>
+<li>☐ Link definitions with a space in the URL, <code>[a]: b c</code>, or a title in
+parentheses, which kramdown takes as part of the URL. Instead, the
+first is text and the second a title.</li>
+<li>⊟ Images, inline and by reference.</li>
+<li>☐ An image’s alt text as written, including markup and straight
+quotes, with only backslash escapes applied. Instead, its markup is
+parsed and its dashes, ellipses and quotes made typographic.</li>
+<li>⊟ Emphasis and strong emphasis. <code>*</code> works inside words, <code>_</code> doesn’t.</li>
+<li>☐ Emphasis delimiter runs kramdown reads differently, like <code>a*"b"*c</code>
+or <code>This is **a *star*.</code> Instead, they’re read by CommonMark’s rules.</li>
+<li>☐ Empty emphasis, <code>****</code>, written as <code>&lt;em&gt;**&lt;/em&gt;</code>. Instead, it’s
+text.</li>
+<li>☐ Emphasis inside the same kind of emphasis, <code>*a _b_ c*</code> or <code>_*b*_</code>,
+left literal. Instead, it nests.</li>
+<li>☐ <code>***a***</code> and <code>___a___</code> as strong emphasis around emphasis.
+Instead, they’re emphasis around strong emphasis.</li>
+<li>⊟ Code spans.</li>
+<li>☐ A backtick next to a space kept literal, as in <code>` a `</code>.
+Instead, it opens a code span.</li>
+<li>⊟ HTML spans, with Markdown parsed inside them.</li>
+<li>☐ The HTML spans kramdown leaves raw beyond its documented ones, like
+<code>&lt;u&gt;</code>, <code>&lt;mark&gt;</code> and custom elements. Instead, Markdown is parsed in
+them.</li>
+<li>☐ Unclosed HTML spans closed, and stray end tags and block tags in a
+paragraph made text. Instead, they’re kept as HTML.</li>
+<li>☐ The <code>parse_span_html</code> option. Instead, HTML spans are read as with
+it on, kramdown’s default.</li>
+<li>☐ Guillemets from <code>&lt;&lt;</code> and <code>&gt;&gt;</code>. Instead, they’re parsed as text or
+as an HTML tag.</li>
+<li>☑ <a href="struct.Extensions.html#associatedconstant.ENABLE_ABBREVIATIONS" title="associated constant pulldown_kram::Extensions::ENABLE_ABBREVIATIONS"><code>ENABLE_ABBREVIATIONS</code></a>: Abbreviations, <code>*[HTML]: …</code>. Each use
+becomes an <code>&lt;abbr&gt;</code> in HTML events, with the attributes of any
+attribute lists on the lines around the definition.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_FOOTNOTES" title="associated constant pulldown_kram::Extensions::ENABLE_FOOTNOTES"><code>ENABLE_FOOTNOTES</code></a>: Footnotes, with block content in their
+definitions.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_FOOTNOTES" title="associated constant pulldown_kram::Extensions::ENABLE_FOOTNOTES"><code>ENABLE_FOOTNOTES</code></a>: The last footnote definition of a name
+winning, and a lazy line ending a definition. Instead, the first wins,
+and lazy lines continue it.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_FOOTNOTES" title="associated constant pulldown_kram::Extensions::ENABLE_FOOTNOTES"><code>ENABLE_FOOTNOTES</code></a>: A footnote definition on a paragraph’s next
+line kept as text. Instead, it’s a footnote.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_FOOTNOTES" title="associated constant pulldown_kram::Extensions::ENABLE_FOOTNOTES"><code>ENABLE_FOOTNOTES</code></a>: A table or math block indented in a footnote
+definition. Instead, it’s text.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_TYPOGRAPHY" title="associated constant pulldown_kram::Extensions::ENABLE_TYPOGRAPHY"><code>ENABLE_TYPOGRAPHY</code></a>: Dashes, ellipses and smart quotes.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TYPOGRAPHY" title="associated constant pulldown_kram::Extensions::ENABLE_TYPOGRAPHY"><code>ENABLE_TYPOGRAPHY</code></a>: Smart quotes where kramdown curls them the
+other way, like <code>'Tis</code> and <code>5'10"</code>. Instead, they’re curled as
+pulldown-cmark curls them.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TYPOGRAPHY" title="associated constant pulldown_kram::Extensions::ENABLE_TYPOGRAPHY"><code>ENABLE_TYPOGRAPHY</code></a>: Runs of four or more dashes made into dashes
+as kramdown makes them. Instead, they’re en dashes.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_MATH" title="associated constant pulldown_kram::Extensions::ENABLE_MATH"><code>ENABLE_MATH</code></a>: Inline math, <code>$$…$$</code> in a paragraph with other
+content. <code>$…$</code> stays text.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_MATH" title="associated constant pulldown_kram::Extensions::ENABLE_MATH"><code>ENABLE_MATH</code></a>: <code>\$$…$$</code> to make math alone in a paragraph inline.
+Instead, it’s left literal.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_STRIKETHROUGH" title="associated constant pulldown_kram::Extensions::ENABLE_STRIKETHROUGH"><code>ENABLE_STRIKETHROUGH</code></a>: Strikethrough, <code>~~…~~</code>, from kramdown’s
+GFM parser. <code>~…~</code> stays text.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_STRIKETHROUGH" title="associated constant pulldown_kram::Extensions::ENABLE_STRIKETHROUGH"><code>ENABLE_STRIKETHROUGH</code></a>: Runs of tildes kramdown’s GFM parser reads
+differently, like <code>~~a~~~</code>, and <code>~~~a~~~</code> as a paragraph. Instead, the
+first is text and the second a fence.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_RAW_HTML_SPANS" title="associated constant pulldown_kram::Extensions::ENABLE_RAW_HTML_SPANS"><code>ENABLE_RAW_HTML_SPANS</code></a>: The HTML spans kramdown leaves raw, like
+<code>&lt;kbd&gt;</code> and <code>&lt;code&gt;</code>, their text passed through unchanged.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_RAW_HTML_SPANS" title="associated constant pulldown_kram::Extensions::ENABLE_RAW_HTML_SPANS"><code>ENABLE_RAW_HTML_SPANS</code></a>: A nested tag of the same name in a raw
+HTML span, like <code>&lt;kbd&gt;a &lt;kbd&gt;b&lt;/kbd&gt; c&lt;/kbd&gt;</code>. Instead, the first end
+tag ends the raw text.</li>
+</ul>
+<h3 id="non-content-elements"><a class="doc-anchor" href="#non-content-elements">§</a>Non-content elements</h3>
+<ul>
+<li>☑ Tags for extensions kramdown doesn’t have, like <code>{::something}</code>,
+left as text.</li>
+<li>☐ Definition attribute lists, <code>: {:.cls} definition</code>. Instead,
+they’re parsed as text.</li>
+<li>☐ Term attribute lists, <code>{:#id} term</code>. Instead, they’re parsed as
+text.</li>
+<li>☐ Attribute list definitions, <code>{:name: .class}</code>, and references to
+them, including kramdown’s <code>standalone</code>, <code>footnotes</code> and <code>auto_ids</code>.
+Instead, definitions are removed and references ignored.</li>
+<li>☐ The <code>options</code> extension. Instead, its block form is removed, with
+any body kept as Markdown, and its span form is left as text.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_END_OF_BLOCK_MARKERS" title="associated constant pulldown_kram::Extensions::ENABLE_END_OF_BLOCK_MARKERS"><code>ENABLE_END_OF_BLOCK_MARKERS</code></a>: The end-of-block marker <code>^</code>,
+closing the paragraph, list, blockquote or code block before it.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_END_OF_BLOCK_MARKERS" title="associated constant pulldown_kram::Extensions::ENABLE_END_OF_BLOCK_MARKERS"><code>ENABLE_END_OF_BLOCK_MARKERS</code></a>: An indented <code>^</code> kept as text.
+Instead, it’s a marker.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_END_OF_BLOCK_MARKERS" title="associated constant pulldown_kram::Extensions::ENABLE_END_OF_BLOCK_MARKERS"><code>ENABLE_END_OF_BLOCK_MARKERS</code></a>: A marker after an HTML block.
+Instead, it’s text.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_BLOCK_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_BLOCK_ATTRIBUTES"><code>ENABLE_BLOCK_ATTRIBUTES</code></a>: Block attribute lists, on the line
+before or after a block, or alone between blocks to apply to the next
+one.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_BLOCK_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_BLOCK_ATTRIBUTES"><code>ENABLE_BLOCK_ATTRIBUTES</code></a>: Block attribute lists on link
+definitions, applied to the links and images that use them.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_BLOCK_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_BLOCK_ATTRIBUTES"><code>ENABLE_BLOCK_ATTRIBUTES</code></a>: A block attribute list after a list
+item ending the list. Instead, it’s applied to the list, but the items
+after it stay in the same list.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_BLOCK_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_BLOCK_ATTRIBUTES"><code>ENABLE_BLOCK_ATTRIBUTES</code></a>: Block attribute lists on HTML blocks.
+Instead, one before the block is dropped, and one after goes to the
+next block.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_BLOCK_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_BLOCK_ATTRIBUTES"><code>ENABLE_BLOCK_ATTRIBUTES</code></a>: An attribute list indented by four
+spaces kept as text. Instead, it’s read.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_BLOCK_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_BLOCK_ATTRIBUTES"><code>ENABLE_BLOCK_ATTRIBUTES</code></a>: An attribute list’s attribute replacing
+the element’s own of the same name, like an ordered list’s <code>start</code>.
+Instead, both are written.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_ATTRIBUTES"><code>ENABLE_SPAN_ATTRIBUTES</code></a>: Span attribute lists, directly after
+emphasis, a link, an image or a code span.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_ATTRIBUTES"><code>ENABLE_SPAN_ATTRIBUTES</code></a>: The empty span attribute list, <code>{::}</code>,
+as a separator between spans.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_ATTRIBUTES"><code>ENABLE_SPAN_ATTRIBUTES</code></a>: Span attribute lists after a collapsed
+reference link, <code>[a][]{:.c}</code>. Instead, they’re text.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_ATTRIBUTES"><code>ENABLE_SPAN_ATTRIBUTES</code></a>: Span attribute lists after HTML spans
+and inline math. Instead, they’re text.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_SPAN_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_SPAN_ATTRIBUTES"><code>ENABLE_SPAN_ATTRIBUTES</code></a>: <code>{::}</code> on a line of its own kept as
+text. Instead, it’s dropped.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_ITEM_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_ITEM_ATTRIBUTES"><code>ENABLE_ITEM_ATTRIBUTES</code></a>: List item attribute lists,
+<code>* {:.cls} item</code>.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_ITEM_ATTRIBUTES" title="associated constant pulldown_kram::Extensions::ENABLE_ITEM_ATTRIBUTES"><code>ENABLE_ITEM_ATTRIBUTES</code></a>: Only the first of two item attribute
+lists read, <code>* {:.a}{:.b} item</code>. Instead, both are.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_COMMENTS" title="associated constant pulldown_kram::Extensions::ENABLE_COMMENTS"><code>ENABLE_COMMENTS</code></a>: The <code>comment</code> extension, as a block or span,
+emitted as an HTML comment.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_COMMENTS" title="associated constant pulldown_kram::Extensions::ENABLE_COMMENTS"><code>ENABLE_COMMENTS</code></a>: The <code>comment</code> extension in a blockquote.
+Instead, it’s text.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_NOMARKDOWN" title="associated constant pulldown_kram::Extensions::ENABLE_NOMARKDOWN"><code>ENABLE_NOMARKDOWN</code></a>: The <code>nomarkdown</code> extension, as a block or
+span, emitted as raw HTML unless its <code>type</code> names another converter.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_NOMARKDOWN" title="associated constant pulldown_kram::Extensions::ENABLE_NOMARKDOWN"><code>ENABLE_NOMARKDOWN</code></a>: The <code>nomarkdown</code> extension in a blockquote.
+Instead, it’s text.</li>
+</ul>
+<h3 id="converter"><a class="doc-anchor" href="#converter">§</a>Converter</h3>
+<p>Not part of the syntax, but features Jekyll sites rely on.</p>
+<ul>
+<li>☐ The <code>toc_levels</code> option. Instead, every heading level is listed.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_AUTO_IDS" title="associated constant pulldown_kram::Extensions::ENABLE_AUTO_IDS"><code>ENABLE_AUTO_IDS</code></a>: Automatic header ids, generated from the
+heading’s text without markup, the same way as kramdown’s GFM parser,
+Jekyll’s default.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_AUTO_IDS" title="associated constant pulldown_kram::Extensions::ENABLE_AUTO_IDS"><code>ENABLE_AUTO_IDS</code></a>: Ids for headings with images or raw HTML
+spans, made from the spans’ text and not an image’s alt text. Instead,
+they’re made from the alt text and not the spans’ text.</li>
+<li>⊟ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_OF_CONTENTS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_OF_CONTENTS"><code>ENABLE_TABLES_OF_CONTENTS</code></a>: <code>{:toc}</code> tables of contents, nested
+by heading level. Headings with the class <code>no_toc</code> are excluded, and
+links inside headings are left out. If there are no headings, the
+marked list is removed.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_OF_CONTENTS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_OF_CONTENTS"><code>ENABLE_TABLES_OF_CONTENTS</code></a>: Only the first list marked <code>{:toc}</code>
+made a table of contents. Instead, every one is.</li>
+<li>☐ <a href="struct.Extensions.html#associatedconstant.ENABLE_TABLES_OF_CONTENTS" title="associated constant pulldown_kram::Extensions::ENABLE_TABLES_OF_CONTENTS"><code>ENABLE_TABLES_OF_CONTENTS</code></a>: kramdown’s ids on a table of
+contents, <code>markdown-toc</code> on the list and <code>markdown-toc-…</code> on its links.
+Instead, there are none.</li>
+</ul>
+<h2 id="how-it-works"><a class="doc-anchor" href="#how-it-works">§</a>How it works</h2>
+<p>Reading a document takes four steps.</p>
+<ol>
+<li>The Markdown is rewritten wherever kramdown reads a line differently
+from CommonMark, so that pulldown-cmark reads it kramdown’s way. For
+example, a blank line goes in after the end tag of an HTML block,
+since kramdown ends the block there and CommonMark doesn’t. Syntax
+pulldown-cmark can’t read at all, like <code>{::comment}</code> or the
+end-of-block marker, is replaced with a stand-in: a little HTML that
+pulldown-cmark reads as a block or a span, and that the reader later
+swaps for what it stands for.</li>
+<li>pulldown-cmark parses the rewritten text.</li>
+<li>A reader takes the events a block at a time. It takes attribute
+lists out of the text and attaches them to the elements they belong
+to, puts back what the stand-ins stand for, and corrects the events
+where kramdown’s structure differs, like in definition lists, list
+item paragraphs, header ids and abbreviations.</li>
+<li>With tables of contents on, all of the events are read first, and
+each list marked <code>{:toc}</code> is replaced with links to the headings.</li>
+</ol>
+<p>The ranges from <a href="struct.Events.html#method.into_offset_iter" title="method pulldown_kram::Events::into_offset_iter"><code>Events::into_offset_iter</code></a> are mapped back through the
+rewrites, so they point into the Markdown as it was given.</p>
+</div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.pulldown_cmark"><code>pub use pulldown_cmark;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="html/index.html" title="mod pulldown_kram::html">html</a></dt><dd>HTML rendering that matches kramdown’s output, attributes included.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Attributes.html" title="struct pulldown_kram::Attributes">Attributes</a></dt><dd>The id, classes and other attributes that kramdown’s attribute lists
+assign to an element.</dd><dt><a class="struct" href="struct.Document.html" title="struct pulldown_kram::Document">Document</a></dt><dd>A kramdown document, ready to parse.</dd><dt><a class="struct" href="struct.Events.html" title="struct pulldown_kram::Events">Events</a></dt><dd>An iterator over the events of a <a href="struct.Document.html" title="struct pulldown_kram::Document"><code>Document</code></a> and their attributes,
+returned by <a href="struct.Document.html#method.events" title="method pulldown_kram::Document::events"><code>Document::events</code></a>.</dd><dt><a class="struct" href="struct.Extensions.html" title="struct pulldown_kram::Extensions">Extensions</a></dt><dd>The parts of kramdown’s syntax that go beyond CommonMark, each of
+which can be turned off.</dd><dt><a class="struct" href="struct.OffsetIter.html" title="struct pulldown_kram::OffsetIter">Offset<wbr>Iter</a></dt><dd>An iterator over the events of a <a href="struct.Document.html" title="struct pulldown_kram::Document"><code>Document</code></a>, with their attributes and
+byte ranges in the markdown the document was created from.</dd><dt><a class="struct" href="struct.Options.html" title="struct pulldown_kram::Options">Options</a></dt><dd>Parsing options for a <a href="struct.Document.html" title="struct pulldown_kram::Document"><code>Document</code></a>: which kramdown
+extensions to enable, plus any extra pulldown-cmark options.</dd></dl></section></div></main></body></html>
