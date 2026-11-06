@@ -1,5 +1,8 @@
 # pulldown-kram
 
+[![CI](https://github.com/nixpulvis/pulldown-kram/actions/workflows/ci.yml/badge.svg)](https://github.com/nixpulvis/pulldown-kram/actions/workflows/ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-nixpulvis.com-blue)](https://nixpulvis.com/pulldown-kram/)
+
 A [kramdown] parser built on [`pulldown_cmark`].
 
 kramdown is a Markdown dialect (like GFM) which [Jekyll] uses by default. This
@@ -82,4 +85,4 @@ MIT or Apache-2.0, at your option. kramdown's test cases, under
 [kramdown]: https://kramdown.gettalong.org
 [Jekyll]: https://jekyllrb.com
 [`pulldown_cmark`]: https://docs.rs/pulldown-cmark
-[documentation]: https://docs.rs/pulldown-kram
+[documentation]: https://nixpulvis.com/pulldown-kram/

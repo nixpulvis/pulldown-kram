@@ -1,0 +1,46 @@
+# Build the docs from master and publish them to the root of the gh-pages
+# branch, which GitHub Pages serves at https://nixpulvis.com/pulldown-kram/
+# (Settings > Pages > Deploy from a branch > gh-pages).
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo doc --no-deps
+
+      # rustdoc puts the crate's docs under pulldown_kram/, with nothing at
+      # the root, so send the root there. .nojekyll keeps Pages from running
+      # the files through Jekyll.
+      - name: Add root redirect
+        run: |
+          rm -f target/doc/.lock
+          touch target/doc/.nojekyll
+          cat > target/doc/index.html <<'EOF'
+          <!DOCTYPE html>
+          <meta charset="utf-8">
+          <title>pulldown-kram</title>
+          <meta http-equiv="refresh" content="0; url=pulldown_kram/">
+          <link rel="canonical" href="pulldown_kram/">
+          <a href="pulldown_kram/">pulldown_kram</a>
+          EOF
+
+      - uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: target/doc
+          branch: gh-pages
