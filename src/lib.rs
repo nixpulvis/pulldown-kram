@@ -26,12 +26,6 @@
 //! assert!(attributes.has_class("new"));
 //! ```
 //!
-//! The input is lightly rewritten where kramdown and CommonMark disagree,
-//! parsed by pulldown-cmark, and the resulting events are post-processed to
-//! add kramdown's extensions. The output is plain pulldown-cmark events, so
-//! existing renderers work unchanged, and can use the attributes if they
-//! want them.
-//!
 //! [`html::push_html`] renders the events as HTML the way kramdown does,
 //! attributes included. The [`html`] module mirrors
 //! [`pulldown_cmark::html`][cmark-html].
