@@ -266,7 +266,9 @@ impl<'a> Reader<'a> {
             let named = after
                 .get(..name.len())
                 .is_some_and(|tag| tag.eq_ignore_ascii_case(name));
-            let ends = after[name.len().min(after.len())..].starts_with(['>', ' ', '\t', '\n']);
+            let ends = after
+                .get(name.len()..)
+                .is_some_and(|tail| tail.starts_with(['>', ' ', '\t', '\n']));
             (named && ends).then_some(start + at)
         }) else {
             return;

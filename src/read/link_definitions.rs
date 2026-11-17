@@ -63,7 +63,11 @@ impl<'a> LinkDefinitions<'a> {
                 found.lines.push(start);
                 attribute_lists.extend(before);
             }
-            let mut line = Lines(text).next(span.end.saturating_sub(1));
+            let last_char = text[..span.end]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(start, _)| start);
+            let mut line = Lines(text).next(last_char);
             while let Some((start, after, end)) = Self::attribute_lists_on(text, line) {
                 found.lines.push(start);
                 attribute_lists.extend(after);
